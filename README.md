@@ -49,10 +49,9 @@ folder; a successful build does not establish playable behavior.
 
 ## Status and limits
 
-Crazy Taxi has reached browser menus and controllable driving with audio.
-Compatibility and rendering remain incomplete. New titles require independent
-bring-up; this is not a universal ROM converter. Online services, deterministic
-competition and Playmos integration are not provided by the kit.
+Crazy Taxi is playable in modern browsers, with correct rendering, working
+audio and controls. Performance optimization is ongoing. Other titles need
+their own profiles and validation.
 
 GDI and supported raw CUE layouts can be imported directly or from 7z/ZIP.
 CHD, CDI, scrambled images and WinCE startup need additional adapters.
