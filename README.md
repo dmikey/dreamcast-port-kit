@@ -100,6 +100,10 @@ formats show a diagnostic magenta texture; modifier volumes and full hardware
 render fidelity remain unfinished. Native `build --graphics` is an optional
 SDL2/OpenGL diagnostic; the product target is the browser.
 
+## Browser boot intro
+
+The viewer starts black, then fades to a white Dmikeycast logo with scanlines after Start game. The intro is a page animation, not BIOS execution. Game controls and game audio stay hidden until the eight-second intro and runtime initialization both finish; reduced-motion settings show the completed mark. To add a private boot cue, place `boot-sound.mp3` in the project's ignored `.local/boot/` before publishing browser assets. User audio is not bundled in the kit.
+
 ## Supported disc inputs
 
 | Input | Current support |
@@ -186,6 +190,7 @@ controller), keyboard, and a toggleable Dreamcast touch overlay. Left stick and
 D-pad steer, RT accelerates, LT brakes, and face buttons retain Dreamcast mappings.
 Triggers preserve analog values; the stick uses a 15 percent dead zone. Input is
 released on blur, tab hiding, pointer cancellation, and controller disconnect.
+Rapid pointer presses track individual pointer IDs; pointer clicks do not create a second timed press. Acknowledged worker messages cap pending input at 16 states, merge redundant analog changes, and preserve the final release even under overload. Diagnostics include queue depth and dropped/coalesced states. Physical Safari button-mashing still requires target-device confirmation.
 Controller discovery now returns the standard capability definition immediately
 after its function code, including the four analog axes. Verify physical
 controllers on the target browser; isolated mapping tests do not prove a device.

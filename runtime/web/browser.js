@@ -1,5 +1,6 @@
 'use strict';
 const status=document.querySelector('#status'),log=document.querySelector('#log');
+const bootIntro=typeof PortBootIntro==='undefined'?null:new PortBootIntro(document.querySelector('.game-stage'));
 // Bounded diagnostic history. Rendering logs is batched outside the hot path.
 class DiagnosticRing {
  constructor(capacity){this.capacity=capacity;this.slots=new Array(capacity);this.total=0;}
@@ -25,11 +26,11 @@ function reportStartup(reason){
  const payload={schemaVersion:1,reason:String(reason).slice(0,1000),userAgent:navigator.userAgent||'',runtimeReady,events:diagnostics.snapshot().slice(-40).map(e=>({kind:e.kind,message:e.message.slice(0,1000)}))};
  fetch('/diagnostics',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).catch(()=>{});
 }
-function startupFailure(reason){const error=document.querySelector('#runtime-error');error.hidden=false;error.textContent='Game could not start: '+reason;output('[STARTUP] '+reason);reportStartup(reason);}
-var Module={onRuntimeInitialized:()=>{runtimeReady=true;const pause=document.querySelector('#pause-game');if(pause)pause.disabled=false;reportStartup('Runtime initialized');},canvas:document.querySelector('#canvas'),print:output,printErr:output,setStatus:text=>{if(text)status.textContent=text;},onAbort:reason=>{status.textContent='Execution stopped. See runtime output.';output('Runtime aborted:',reason);}};
+function startupFailure(reason){bootIntro?.fail();const error=document.querySelector('#runtime-error');error.hidden=false;error.textContent='Game could not start: '+reason;output('[STARTUP] '+reason);reportStartup(reason);}
+var Module={onRuntimeInitialized:()=>{runtimeReady=true;bootIntro?.ready();const pause=document.querySelector('#pause-game');if(pause)pause.disabled=false;reportStartup('Runtime initialized');},canvas:document.querySelector('#canvas'),print:output,printErr:output,setStatus:text=>{if(text)status.textContent=text;},onAbort:reason=>{status.textContent='Execution stopped. See runtime output.';output('Runtime aborted:',reason);}};
 Module.onAbort=reason=>startupFailure(String(reason));
 Module.onExit=code=>{if(code)startupFailure('Runtime exited with code '+code+'. Expand Runtime output for details.');};
-Module.portAudioPush=samples=>{if(typeof portAudio!=='undefined')portAudio.push(samples);};
+Module.portAudioPush=samples=>{if(!bootIntro?.active&&typeof portAudio!=='undefined')portAudio.push(samples);};
 Module.portBrowserYield=()=>typeof portBrowserScheduler!=='undefined'?portBrowserScheduler.yield():new Promise(resolve=>setTimeout(resolve,0));
 document.querySelector('#start').addEventListener('click',()=>{
  if(typeof WebAssembly==='undefined'){startupFailure('This browser does not provide WebAssembly.');return;}
@@ -37,6 +38,7 @@ document.querySelector('#start').addEventListener('click',()=>{
  if(typeof portAudio!=='undefined')portAudio.start().catch(error=>{output('[AUDIO] '+error.message);reportStartup('Audio: '+error.message);});
  if(typeof fetch==='function')fetch('build.json').then(response=>response.json()).then(info=>{buildInfo=info;}).catch(()=>{});
  document.querySelector('#start').disabled=true;status.textContent='Loading worker runtime…';reportStartup('Starting worker runtime');
+ bootIntro?.start(typeof portAudio!=='undefined'&&portAudio.muted);
  try{
   workerRuntime=new PortWorkerRuntime(Module.canvas,{ready:()=>Module.onRuntimeInitialized(),log:output,audio:Module.portAudioPush,frame:saveFrame,snapshot:bytes=>saveDownload(bytes,'application/octet-stream','dreamcast-render-snapshot.bin'),vram:bytes=>saveDownload(bytes,'application/octet-stream','dreamcast-vram.bin'),benchmark:result=>{measurements.push(result);output('[BENCHMARK] '+JSON.stringify(result));},error:startupFailure});
   Module._port_button=(bit,pressed)=>workerRuntime.button(bit,pressed);
@@ -47,7 +49,7 @@ document.querySelector('#start').addEventListener('click',()=>{
 });
 
 // One browser input owner combines keyboard, touch and the standard Gamepad API.
-const keys=new Set(),touch=new Set();
+const keys=new Set(),touch=new Set(),pointerOwners=new Map(),clickTimers=new Map();
 const keyButtons={Enter:8,KeyZ:4,KeyX:2,KeyA:1024,KeyS:512,ArrowUp:16,ArrowDown:32,ArrowLeft:64,ArrowRight:128};
 const gamepadButtons={0:4,1:2,2:1024,3:512,9:8,12:16,13:32,14:64,15:128};
 const gameBits=[2,4,8,16,32,64,128,512,1024];
@@ -63,7 +65,7 @@ function pollController(){
  const other=pads.find(p=>p&&p.connected);
  const name=pad?'Controller connected: '+pad.id:other?'Controller detected; standard mapping unavailable. Use keyboard or touch.':'Controller: connect a gamepad and press a button.';
  if(name!==lastController){controllerStatus.textContent=name;lastController=name;}
- if(inputActive){
+ if(inputActive&&!bootIntro?.active){
   for(const code of keys)bits|=keyButtons[code]||0;
   for(const b of document.querySelectorAll('[data-bit]'))if(touch.has(b))bits|=Number(b.dataset.bit);
   const held=name=>Array.from(touch).some(b=>b.dataset.axis===name);
@@ -88,19 +90,25 @@ function pollController(){
  }
 }
 function controllerFrame(){pollController();requestAnimationFrame(controllerFrame);}
-function release(){resetStick();inputActive=false;keys.clear();touch.clear();for(const b of document.querySelectorAll('[aria-pressed]'))b.setAttribute('aria-pressed','false');if(runtimeReady&&Module._port_axes){for(const bit of gameBits)Module._port_button(bit,0);Module._port_axes(0,0,0,0);}}
+function clearTouch(){pointerOwners.clear();for(const timer of clickTimers.values())clearTimeout(timer);clickTimers.clear();touch.clear();for(const b of document.querySelectorAll('[data-bit],[data-axis]'))b.setAttribute('aria-pressed','false');resetStick();}
+function release(){clearTouch();inputActive=false;keys.clear();if(runtimeReady&&Module._port_axes){for(const bit of gameBits)Module._port_button(bit,0);Module._port_axes(0,0,0,0);}}
 window.addEventListener('keydown',event=>{if(event.target?.closest?.('input,textarea,select,[contenteditable="true"]'))return;if(keyButtons[event.code]||['KeyQ','KeyW'].includes(event.code)){event.preventDefault();inputActive=true;keys.add(event.code);pollController();}});
 window.addEventListener('keyup',event=>{keys.delete(event.code);pollController();});
 window.addEventListener('blur',release);window.addEventListener('focus',()=>inputActive=true);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)release();else inputActive=document.hasFocus();});
 for(const button of document.querySelectorAll('[data-bit],[data-axis]')){
  button.setAttribute('aria-pressed','false');
- const up=()=>{touch.delete(button);button.setAttribute('aria-pressed','false');pollController();};
- button.addEventListener('pointerdown',event=>{event.preventDefault();inputActive=true;button.setPointerCapture(event.pointerId);touch.add(button);button.setAttribute('aria-pressed','true');pollController();});
+ const refresh=()=>{const held=clickTimers.has(button)||Array.from(pointerOwners.values()).includes(button);if(held)touch.add(button);else touch.delete(button);button.setAttribute('aria-pressed',String(held));pollController();};
+ button.addEventListener('pointerdown',event=>{event.preventDefault();inputActive=true;pointerOwners.set(event.pointerId,button);try{button.setPointerCapture(event.pointerId);}catch{}refresh();});
+ const up=event=>{if(pointerOwners.get(event.pointerId)!==button)return;pointerOwners.delete(event.pointerId);refresh();};
  for(const name of ['pointerup','pointercancel','lostpointercapture'])button.addEventListener(name,up);
  // Keyboard/assistive clicks have no pointer hold; give them a short press.
- button.addEventListener('click',event=>{if(!touch.has(button)){inputActive=true;touch.add(button);button.setAttribute('aria-pressed','true');pollController();setTimeout(up,200);}});
+ // Pointer-generated clicks must not create a second press after pointerup.
+ button.addEventListener('click',event=>{if(event.detail!==0||event.pointerType)return;inputActive=true;if(clickTimers.has(button))clearTimeout(clickTimers.get(button));clickTimers.set(button,setTimeout(()=>{clickTimers.delete(button);refresh();},200));refresh();});
 }
+// Capture can be lost or rejected when Safari retargets a fast pointer sequence.
+function releasePointer(event){const button=pointerOwners.get(event.pointerId);if(!button)return;pointerOwners.delete(event.pointerId);if(!clickTimers.has(button)&&!Array.from(pointerOwners.values()).includes(button)){touch.delete(button);button.setAttribute('aria-pressed','false');}pollController();}
+window.addEventListener('pointerup',releasePointer);window.addEventListener('pointercancel',releasePointer);
 requestAnimationFrame(controllerFrame);
 
 window.addEventListener('error',event=>startupFailure(event.message||'A browser script failed.'));
@@ -108,17 +116,19 @@ window.addEventListener('unhandledrejection',event=>startupFailure(String(event.
 
 const stickElement=document.querySelector('#stick'),stickKnob=stickElement.querySelector('span');
 function resetStick(){stickX=0;stickY=0;stickPointer=null;if(stickKnob)stickKnob.style.transform='translate(0,0)';}
-function moveStick(event){const r=stickElement.getBoundingClientRect(),radius=r.width/2;let x=(event.clientX-r.left-radius)/radius,y=(event.clientY-r.top-radius)/radius;const length=Math.hypot(x,y);if(length>1){x/=length;y/=length;}stickX=Math.round(x*127);stickY=Math.round(y*127);stickKnob.style.transform=`translate(${x*radius*.55}px,${y*radius*.55}px)`;}
-stickElement.addEventListener('pointerdown',event=>{if(stickPointer!==null)return;event.preventDefault();inputActive=true;stickPointer=event.pointerId;stickElement.setPointerCapture(event.pointerId);moveStick(event);});
+function moveStick(event){const r=stickElement.getBoundingClientRect(),radius=r.width/2;let x=(event.clientX-r.left-radius)/radius,y=(event.clientY-r.top-radius)/radius;const length=Math.hypot(x,y);if(length>1){x/=length;y/=length;}stickX=Math.round(x*127);stickY=Math.round(y*127);stickKnob.style.transform=`translate(${x*radius*.55}px,${y*radius*.55}px)`;pollController();}
+stickElement.addEventListener('pointerdown',event=>{if(stickPointer!==null)return;event.preventDefault();inputActive=true;stickPointer=event.pointerId;try{stickElement.setPointerCapture(event.pointerId);}catch{}moveStick(event);});
 stickElement.addEventListener('pointermove',event=>{if(event.pointerId===stickPointer)moveStick(event);});
-for(const name of ['pointerup','pointercancel','lostpointercapture'])stickElement.addEventListener(name,event=>{if(event.pointerId===stickPointer)resetStick();});
-document.querySelector('#toggle-pad').addEventListener('click',event=>{const pad=document.querySelector('#touch-pad');pad.hidden=!pad.hidden;event.currentTarget.setAttribute('aria-pressed',String(!pad.hidden));event.currentTarget.textContent='On-screen controls: '+(pad.hidden?'off':'on');touch.clear();resetStick();});
+function releaseStick(event){if(event.pointerId===stickPointer){resetStick();pollController();}}
+for(const name of ['pointerup','pointercancel','lostpointercapture'])stickElement.addEventListener(name,releaseStick);
+window.addEventListener('pointerup',releaseStick);window.addEventListener('pointercancel',releaseStick);
+document.querySelector('#toggle-pad').addEventListener('click',event=>{const pad=document.querySelector('#touch-pad');pad.hidden=!pad.hidden;event.currentTarget.setAttribute('aria-pressed',String(!pad.hidden));event.currentTarget.textContent='On-screen controls: '+(pad.hidden?'off':'on');clearTouch();pollController();});
 
 document.querySelector('#capture-render').addEventListener('click',()=>{if(runtimeReady&&Module._port_render_capture){document.querySelector('#render-log').textContent='';Module._port_render_capture();}});
 
 document.querySelector('details').addEventListener('toggle',flushLog);
 document.querySelector('#download-diagnostics').addEventListener('click',()=>{
- const report={schemaVersion:1,source:'dreamcast-port-kit browser runtime',userAgent:navigator.userAgent||'',build:buildInfo,execution:workerRuntime?'dedicated-worker':'not-started',status:status.textContent,input:{requested:Module.canvas.dataset.input,appliedButtons:Module.canvas.dataset.inputApplied,lastPressed:Module.canvas.dataset.lastPressed},eventsDropped:diagnostics.dropped,events:diagnostics.snapshot(),measurements,diagnosticRenderMode:Number(document.querySelector('#render-mode')?.value||7),audioOutputImplemented:true,audio:typeof portAudio==='undefined'?null:{...portAudio.stats,received:portAudio.received,nonzeroReceived:portAudio.nonzero,contextState:portAudio.context?.state,muted:portAudio.muted}};
+ const report={schemaVersion:1,source:'dreamcast-port-kit browser runtime',userAgent:navigator.userAgent||'',build:buildInfo,execution:workerRuntime?'dedicated-worker':'not-started',status:status.textContent,input:{requested:Module.canvas.dataset.input,appliedButtons:Module.canvas.dataset.inputApplied,lastPressed:Module.canvas.dataset.lastPressed,pending:workerRuntime?.inputQueue.length,inFlight:workerRuntime?.inputInFlight,coalesced:workerRuntime?.inputCoalesced,dropped:workerRuntime?.inputDropped},eventsDropped:diagnostics.dropped,events:diagnostics.snapshot(),measurements,diagnosticRenderMode:Number(document.querySelector('#render-mode')?.value||7),audioOutputImplemented:true,audio:typeof portAudio==='undefined'?null:{...portAudio.stats,received:portAudio.received,nonzeroReceived:portAudio.nonzero,contextState:portAudio.context?.state,muted:portAudio.muted}};
  const url=URL.createObjectURL(new Blob([JSON.stringify(report,null,2)],{type:'application/json'}));
  const link=document.createElement('a');link.href=url;link.download='dreamcast-diagnostics.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 });
@@ -137,3 +147,4 @@ let gamePaused=false;
 document.querySelector('#pause-game')?.addEventListener('click',event=>{gamePaused=!gamePaused;workerRuntime?.pause(gamePaused);lastProgress=performance.now();freezeReported=false;event.currentTarget.textContent=gamePaused?'Resume':'Pause';if(typeof portAudio!=='undefined'&&portAudio.context){const action=gamePaused?'suspend':'resume';portAudio.context[action]?.().catch(error=>output('[AUDIO] '+error.message));}});
 
 document.querySelector('#capture-snapshot')?.addEventListener('click',()=>workerRuntime?.snapshot());
+document.querySelector('#mute-audio')?.addEventListener('click',()=>{if(bootIntro?.audio&&typeof portAudio!=='undefined')bootIntro.audio.muted=portAudio.muted;});

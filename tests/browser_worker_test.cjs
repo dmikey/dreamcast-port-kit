@@ -8,6 +8,7 @@ runtime.start();assert.equal(transferred,1);assert.equal(messages[0].url,'runtim
 runtime.button(8,true);runtime.axes(64,128,-90,0);assert.equal(messages[0].sent.length,1,'input must wait for runtime');
 messages[0].onmessage({data:{kind:'ready'}});assert.deepEqual(Array.from(messages[0].sent[1].message.values),[8,64,128,-90,0]);
 runtime.axes(64,128,-90,0);assert.equal(messages[0].sent.length,2,'unchanged input must not flood worker');
+messages[0].onmessage({data:{kind:'input-applied',bits:8,sequence:messages[0].sent[1].message.sequence}});
 runtime.button(8,false);runtime.axes(0,0,0,0);assert.deepEqual(Array.from(messages[0].sent[2].message.values),[0,0,0,0,0]);
 messages[0].onmessage({data:{kind:'input-applied',bits:8}});assert.equal(canvas.dataset.inputApplied,'8');
 runtime.capture();assert.equal(messages[0].sent.at(-1).message.kind,'capture-render');
@@ -46,3 +47,13 @@ const pausedYield=worker.Module.portBrowserYield();
 self.onmessage({data:{kind:'pause',value:false}});
 pausedYield.then(()=>assert.equal(timers.size,0)).catch(error=>{console.error(error);process.exitCode=1;});
 console.log('Worker contract passed: canvas transfer, input batching/release, ready handshake, logs, audio transfer, diagnostics.');
+
+// A busy worker cannot accumulate an unbounded input-message backlog.
+const stress=new page.Runtime({dataset:{}},{});stress.worker=new Worker('test');stress.ready=true;stress.axes(0,0,0,0);
+for(let i=0;i<10000;i++){stress.button(4,i%2===0);stress.axes(0,i%256,0,0);}
+stress.button(4,false);stress.axes(0,0,0,0);assert.equal(stress.worker.sent.length,1);assert.ok(stress.inputQueue.length<=16);assert.ok(stress.inputDropped>0);
+while(stress.inputInFlight!==null){stress.inputInFlight=null;stress.sendInput();}
+assert.deepEqual(Array.from(stress.worker.sent.at(-1).message.values),[0,0,0,0,0],'release survives queue overflow');
+const analog=new page.Runtime({dataset:{}},{});analog.worker=new Worker('test');analog.ready=true;analog.axes(0,0,0,0);for(let i=0;i<10000;i++)analog.axes(0,i%256,0,0);assert.equal(analog.inputQueue.length,1);assert.ok(analog.inputCoalesced>0);
+self.onmessage({data:{kind:'input',values:[0,0,0,0,0],sequence:1234}});assert.equal(posted.at(-1).message.sequence,1234,'worker acknowledges the exact input message');
+console.log('Input backpressure passed: bounded 10,000-event burst, final release, analog coalescing and sequenced acknowledgements.');

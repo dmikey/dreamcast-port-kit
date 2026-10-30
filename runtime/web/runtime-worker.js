@@ -7,7 +7,7 @@ function fail(reason){flushLogs();postMessage({kind:'error',message:String(reaso
 let pulseTimer=null,replayTimers=[],benchmarkTimer=null;
 function cancelReplay(){for(const timer of replayTimers)clearTimeout(timer);replayTimers=[];}
 function endPulse(){if(pulseTimer!==null){clearTimeout(pulseTimer);pulseTimer=null;}lastInput=[0,0,0,0,0];applyInput();}
-function applyInput(){if(ready&&lastInput&&Module._port_input){const bits=Module._port_input(...lastInput);postMessage({kind:"input-applied",bits,values:lastInput});}}
+function applyInput(sequence){if(ready&&lastInput&&Module._port_input){const bits=Module._port_input(...lastInput);postMessage({kind:"input-applied",bits,values:lastInput,sequence});}}
 self.onmessage=event=>{
  const data=event.data;
  if(data.kind==='start'){
@@ -47,7 +47,7 @@ self.onmessage=event=>{
  else if(data.kind==='input'){
   if(!Array.isArray(data.values)||data.values.length!==5||!data.values.every(Number.isFinite))return;
   cancelReplay();if(pulseTimer!==null)endPulse();
-  const v=data.values;lastInput=[v[0]&0xffff,Math.max(0,Math.min(255,v[1]|0)),Math.max(0,Math.min(255,v[2]|0)),Math.max(-128,Math.min(127,v[3]|0)),Math.max(-128,Math.min(127,v[4]|0))];applyInput();
+  const v=data.values;lastInput=[v[0]&0xffff,Math.max(0,Math.min(255,v[1]|0)),Math.max(0,Math.min(255,v[2]|0)),Math.max(-128,Math.min(127,v[3]|0)),Math.max(-128,Math.min(127,v[4]|0))];applyInput(data.sequence);
  }else if(data.kind==='capture-render'&&ready&&Module._port_render_capture)Module._port_render_capture();
 };
 self.addEventListener('error',event=>fail(event.message||'Worker script error'));
