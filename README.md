@@ -1,8 +1,15 @@
 # Dreamcast Port Kit
 
-A repeatable toolkit for bringing user-supplied Dreamcast games to the browser.
-It translates SH-4 game code to C/WebAssembly, provides Dreamcast hardware support,
-and interprets the ARM7 sound CPU. Each title needs its own verified profile.
+A **WebGL 2 + WebAssembly port kit for modern browsers**. Bring user-supplied
+Dreamcast games to the web with browser rendering, audio, touch and gamepad input.
+
+The pipeline translates SH-4 game code to C/WebAssembly, emulates Dreamcast
+hardware support and interprets the ARM7 sound CPU. Each title needs its own
+verified profile. **Browser playback is the target**; native executables are
+used for diagnostics.
+
+The player requires a modern browser with WebGL 2, WebAssembly, Web Workers and
+WebGL OffscreenCanvas support.
 
 ![Dreamcast Port Lab workbench: game preview, inspector and runtime console](docs/images/workbench.png)
 
