@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 import hashlib,json,subprocess,shutil,os,sys,html
 
 def publish_web_assets(kit,project,output):
-    names=('index.html','player.html','workbench.js','debug-bridge.js','browser.js','browser.css','browser-scheduler.js','runtime-bridge.js','runtime-worker.js','audio.js','audio-worklet.js')
+    names=('index.html','player.html','workbench.js','projects.js','debug-bridge.js','browser.js','browser.css','browser-scheduler.js','runtime-bridge.js','runtime-worker.js','audio.js','audio-worklet.js')
     for name in names:shutil.copyfile(kit/'runtime/web'/name,output/name)
     title=json.loads((project/'port.json').read_text()).get('disc',{}).get('title','Dreamcast game')
     page=output/'index.html'

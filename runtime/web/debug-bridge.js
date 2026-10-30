@@ -1,7 +1,7 @@
 /* Versioned local debug transport. Typed tools never evaluate browser code. */
 'use strict';
 const portDebugBridge={token:null,session:null,lastSequence:-1,busy:false,frameWaiter:null,
- async request(path,body){const response=await fetch('/debug/'+path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json',...(this.token?{Authorization:'Bearer '+this.token}:{})},...(body?{body:JSON.stringify(body)}:{})});if(!response.ok)throw new Error('Debug connection unavailable');return response.json();},
+ async request(path,body){const response=await fetch('debug/'+path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json',...(this.token?{Authorization:'Bearer '+this.token}:{})},...(body?{body:JSON.stringify(body)}:{})});if(!response.ok)throw new Error('Debug connection unavailable');return response.json();},
  async connect(){try{this.token=(await this.request('config')).token;this.session=(await this.request('register',{view:document.body.dataset.player==='true'?'player':'workbench'})).session_id;this.indicate('Connected');}catch{this.indicate('Offline');}},
  indicate(text){const node=document.getElementById('mcp-status');if(node)node.textContent=text;},
  frame(bytes){if(!this.frameWaiter)return false;const deliver=this.frameWaiter;this.frameWaiter=null;deliver(bytes);return true;},
@@ -10,4 +10,4 @@ const portDebugBridge={token:null,session:null,lastSequence:-1,busy:false,frameW
 setInterval(()=>portDebugBridge.tick(),500);
 portDebugBridge.connect();
 
-window.addEventListener('pagehide',()=>{if(portDebugBridge.session)fetch('/debug/disconnect',{method:'POST',keepalive:true,headers:{'Content-Type':'application/json',Authorization:'Bearer '+portDebugBridge.token},body:JSON.stringify({session_id:portDebugBridge.session})}).catch(()=>{});});
+window.addEventListener('pagehide',()=>{if(portDebugBridge.session)fetch('debug/disconnect',{method:'POST',keepalive:true,headers:{'Content-Type':'application/json',Authorization:'Bearer '+portDebugBridge.token},body:JSON.stringify({session_id:portDebugBridge.session})}).catch(()=>{});});

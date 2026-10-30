@@ -57,3 +57,10 @@ assert.deepEqual(Array.from(stress.worker.sent.at(-1).message.values),[0,0,0,0,0
 const analog=new page.Runtime({dataset:{}},{});analog.worker=new Worker('test');analog.ready=true;analog.axes(0,0,0,0);for(let i=0;i<10000;i++)analog.axes(0,i%256,0,0);assert.equal(analog.inputQueue.length,1);assert.ok(analog.inputCoalesced>0);
 self.onmessage({data:{kind:'input',values:[0,0,0,0,0],sequence:1234}});assert.equal(posted.at(-1).message.sequence,1234,'worker acknowledges the exact input message');
 console.log('Input backpressure passed: bounded 10,000-event burst, final release, analog coalescing and sequenced acknowledgements.');
+
+// Concurrent project/build workers must stream their own project's disc.
+const fetches=[],scopedSelf={location:{href:'http://127.0.0.1:4390/projects/pso/artifacts/build-1/runtime-worker.js'},fetch:(url,options)=>{fetches.push(url);return Promise.resolve({});},addEventListener(){}};
+vm.runInNewContext(read('runtime-worker.js'),{self:scopedSelf,URL});
+scopedSelf.fetch('/disc/0?offset=10&length=20');scopedSelf.fetch('game.wasm');
+assert.equal(fetches[0],'http://127.0.0.1:4390/projects/pso/artifacts/build-1/disc/0?offset=10&length=20');assert.equal(fetches[1],'game.wasm');
+console.log('Project disc routing passed: worker disc requests stay scoped to the selected project/build.');

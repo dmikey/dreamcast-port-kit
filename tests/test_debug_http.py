@@ -7,9 +7,9 @@ from urllib.error import HTTPError
 class DebugHTTPTests(unittest.TestCase):
  def test_auth_origin_host_and_content_type(self):
   with tempfile.TemporaryDirectory() as tmp:
-   project=Path(tmp);(project/'.local/browser').mkdir(parents=True);(project/'.local/source-lock.json').write_text('{"tracks":[]}')
+   project=Path(tmp);(project/'port.json').write_text('{"disc":{"title":"Test"}}');(project/'.local/browser').mkdir(parents=True);(project/'.local/source-lock.json').write_text('{"tracks":[]}')
    with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
-   process=subprocess.Popen([sys.executable,str(Path(__file__).resolve().parents[1]/'serve_browser.py'),'--project',str(project),'--port',str(port)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+   process=subprocess.Popen([sys.executable,str(Path(__file__).resolve().parents[1]/'serve_browser.py'),'--project',str(project),'--port',str(port),'--workspace',str(project/'.local/workspace.json')],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
    try:
     base=f'http://127.0.0.1:{port}'
     for _ in range(100):
@@ -30,4 +30,20 @@ class DebugHTTPTests(unittest.TestCase):
     self.assertEqual(len(request('/debug/sessions',headers)['sessions']),1)
     with self.assertRaises(HTTPError) as error:request('/debug/register',{'Authorization':'Bearer '+token,'Content-Type':'text/plain'},b'{}')
     self.assertEqual(error.exception.code,400)
+    # Registry updates are picked up without restarting; discs and tokens stay scoped.
+    from workspace import Workspace
+    from artifacts import record
+    track=project/'track.raw';track.write_bytes(b'AAA');(project/'.local/source-lock.json').write_text(json.dumps({'tracks':[{'path':str(track)}]}))
+    other=project/'second';(other/'.local').mkdir(parents=True);(other/'port.json').write_text('{"disc":{"title":"Second"},"state":"needs-title-profile"}')
+    second_track=other/'track.raw';second_track.write_bytes(b'BBB');(other/'.local/source-lock.json').write_text(json.dumps({'tracks':[{'path':str(second_track)}]}))
+    Workspace(project/'.local/workspace.json').add(other,'second');receipt=record(other,'prepare')
+    catalog=request('/projects/second/workspace');self.assertEqual(len(catalog['projects']),2);self.assertEqual(catalog['selected']['id'],'second');self.assertFalse(catalog['selected']['browserReady'])
+    for route,expected in [('/disc/0?offset=0&length=1',b'A'),('/projects/second/disc/0?offset=0&length=1',b'B')]:
+     with urlopen(base+route) as response:self.assertEqual(response.read(),expected)
+    with self.assertRaises(HTTPError) as error:request('/projects/second/debug/sessions',headers)
+    self.assertEqual(error.exception.code,401)
+    artifact='/projects/second/artifacts/'+receipt['id']
+    self.assertEqual(request(artifact+'/receipt.json')['stage'],'prepare')
+    with self.assertRaises(HTTPError):request(artifact+'/files/../../port.json')
+    with urlopen(base+'/projects/second/') as response:self.assertIn(b'data-build-ready="false"',response.read())
    finally:process.terminate();process.wait(timeout=3)

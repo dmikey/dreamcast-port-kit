@@ -1,97 +1,153 @@
-"""Loopback-only browser runtime and bounded, same-origin source-disc chunks."""
+"""Loopback-only multi-project workbench, immutable builds and source-disc chunks."""
 from http.server import ThreadingHTTPServer,SimpleHTTPRequestHandler
 from pathlib import Path
-from urllib.parse import urlsplit,parse_qs
-import argparse,json,secrets
+from urllib.parse import urlsplit,parse_qs,unquote
+import argparse,html,json,secrets,threading
 from debug_service import DebugBroker
+from workspace import Workspace,DEFAULT
+from artifacts import ID,WEB_NAMES,read_json,list_artifacts
+
 
 def serve(args):
-    project=Path(args.project).resolve();root=project/'.local/browser'
-    tracks=json.loads((project/'.local/source-lock.json').read_text())['tracks']
-    broker=None
+    kit=Path(__file__).resolve().parent
+    workspace=Workspace(getattr(args,'workspace',DEFAULT))
+    default_project=Path(args.project).resolve()
+    default=next((e['id'] for e in workspace.entries() if Path(e['path'])==default_project),None) or workspace.add(default_project)['id']
+    contexts={};context_lock=threading.Lock()
+    def context(identity):
+        with context_lock:
+            if identity not in contexts:
+                project=workspace.resolve(identity);broker=DebugBroker(project)
+                connection=project/'.local/debug-connection.json'
+                connection.write_text(json.dumps({'token':broker.token,'url':f'http://127.0.0.1:{args.port}','basePath':'/projects/'+identity+'/'})+'\n');connection.chmod(0o600)
+                contexts[identity]=(project,broker)
+            return contexts[identity]
     class Handler(SimpleHTTPRequestHandler):
+        def route(self):
+            url=urlsplit(self.path);parts=unquote(url.path).split('/')
+            self.identity=default;self.artifact=None;self.local_path=url.path
+            if len(parts)>2 and parts[1]=='projects':
+                self.identity=parts[2]
+                if not ID.fullmatch(self.identity):raise ValueError('Invalid project id')
+                if len(parts)==3:
+                    self.send_response(302);self.send_header('Location',url.path+'/');self.end_headers();return False
+                self.local_path='/'+'/'.join(parts[3:])
+                if len(parts)>4 and parts[3]=='artifacts':
+                    self.artifact=parts[4]
+                    if not ID.fullmatch(self.artifact):raise ValueError('Invalid artifact id')
+                    self.local_path='/'+'/'.join(parts[5:])
+            self.project,self.broker=context(self.identity)
+            self.root=self.project/'.local/browser'
+            if self.artifact:
+                folder=self.project/'.local/artifacts'/self.artifact
+                self.receipt=read_json(folder/'artifact.json')
+                if not self.receipt:raise KeyError('Unknown artifact')
+                self.root=folder/'browser'
+            self.query=url.query
+            return True
         def log_message(self,format,*parts):
-            if not self.path.startswith('/debug/'):super().log_message(format,*parts)
+            if '/debug/' not in self.path and not self.path.endswith('/workspace'):super().log_message(format,*parts)
         def debug_guard(self,token=True):
             hosts=(f'127.0.0.1:{args.port}',f'localhost:{args.port}')
             if self.headers.get('Host') not in hosts or self.headers.get('Sec-Fetch-Site')=='cross-site':self.send_error(403);return False
             origin=self.headers.get('Origin')
             if origin and origin not in tuple('http://'+h for h in hosts):self.send_error(403);return False
-            if token and not secrets.compare_digest(self.headers.get('Authorization',''),'Bearer '+broker.token):self.send_error(401);return False
+            if token and not secrets.compare_digest(self.headers.get('Authorization',''),'Bearer '+self.broker.token):self.send_error(401);return False
             return True
         def json_reply(self,value,code=200):
             data=json.dumps(value).encode();self.send_response(code);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data)
-        def debug_get(self,url):
-            if not self.debug_guard(url.path!='/debug/config'):return
-            try:
-                q=parse_qs(url.query)
-                if url.path=='/debug/config':result={'token':broker.token}
-                elif url.path=='/debug/sessions':result={'sessions':broker.list_sessions()}
-                elif url.path=='/debug/status':result=broker.status(q['session_id'][0])
-                elif url.path=='/debug/events':result={'events':broker.events(q['session_id'][0],int(q.get('limit',['100'])[0]),int(q.get('after',['-1'])[0]))}
-                else:self.send_error(404);return
-                self.json_reply(result)
-            except (ValueError,KeyError,TypeError) as error:self.json_reply({'error':str(error)},400)
+        def debug_get(self):
+            if not self.debug_guard(self.local_path!='/debug/config'):return
+            q=parse_qs(self.query);broker=self.broker
+            if self.local_path=='/debug/config':result={'token':broker.token}
+            elif self.local_path=='/debug/sessions':result={'sessions':broker.list_sessions()}
+            elif self.local_path=='/debug/status':result=broker.status(q['session_id'][0]);result['projectId']=self.identity
+            elif self.local_path=='/debug/events':result={'events':broker.events(q['session_id'][0],int(q.get('limit',['100'])[0]),int(q.get('after',['-1'])[0]))}
+            else:self.send_error(404);return
+            self.json_reply(result)
         def debug_post(self):
             if not self.debug_guard():return
-            try:
-                limit=12582912 if self.path=='/debug/complete' else 131072
-                size=int(self.headers.get('Content-Length','0'))
-                if self.headers.get('Content-Type','').split(';')[0]!='application/json' or not 0<size<=limit:raise ValueError('Invalid JSON request size or content type')
-                data=json.loads(self.rfile.read(size))
-                if not isinstance(data,dict):raise ValueError('Expected an object')
-                if self.path=='/debug/register':result=broker.register(data.get('view'))
-                elif self.path=='/debug/poll':result=broker.poll(data['session_id'],data['state'],data['events'])
-                elif self.path=='/debug/disconnect':broker.disconnect(data['session_id']);result={'accepted':True}
-                elif self.path=='/debug/complete':broker.complete(data['session_id'],data['id'],data['result']);result={'accepted':True}
-                elif self.path=='/debug/command':result=broker.command(data['session_id'],data['name'],data['args'])
-                else:self.send_error(404);return
-                self.json_reply(result)
-            except TimeoutError as error:self.json_reply({'error':str(error)},408)
-            except (ValueError,KeyError,TypeError,UnicodeError) as error:self.json_reply({'error':str(error)},400)
+            limit=12582912 if self.local_path=='/debug/complete' else 131072
+            size=int(self.headers.get('Content-Length','0'))
+            if self.headers.get('Content-Type','').split(';')[0]!='application/json' or not 0<size<=limit:raise ValueError('Invalid JSON request size or content type')
+            data=json.loads(self.rfile.read(size));broker=self.broker
+            if not isinstance(data,dict):raise ValueError('Expected an object')
+            if self.local_path=='/debug/register':result=broker.register(data.get('view'))
+            elif self.local_path=='/debug/poll':result=broker.poll(data['session_id'],data['state'],data['events'])
+            elif self.local_path=='/debug/disconnect':broker.disconnect(data['session_id']);result={'accepted':True}
+            elif self.local_path=='/debug/complete':broker.complete(data['session_id'],data['id'],data['result']);result={'accepted':True}
+            elif self.local_path=='/debug/command':result=broker.command(data['session_id'],data['name'],data['args'])
+            else:self.send_error(404);return
+            self.json_reply(result)
         def do_POST(self):
-            if self.path.startswith('/debug/'):self.debug_post();return
-            if self.path!='/diagnostics':self.send_error(404);return
-            origin=self.headers.get('Origin')
-            if origin and origin not in (f'http://127.0.0.1:{args.port}',f'http://localhost:{args.port}'):
-                self.send_error(403);return
             try:
+                if not self.route():return
+                if self.local_path.startswith('/debug/'):self.debug_post();return
+                if self.local_path!='/diagnostics':self.send_error(404);return
+                if not self.debug_guard(False):return
                 size=int(self.headers.get('Content-Length','0'))
-                if not 0<size<=49152:raise ValueError()
+                if not 0<size<=49152:raise ValueError('Invalid diagnostic size')
                 report=json.loads(self.rfile.read(size))
-                if not isinstance(report,dict) or report.get('schemaVersion')!=1:raise ValueError()
+                if not isinstance(report,dict) or report.get('schemaVersion')!=1:raise ValueError('Invalid diagnostics')
                 agent=str(report.get('userAgent',''))
                 browser='safari' if 'Safari/' in agent and not any(s in agent for s in ('Chrome/','Chromium/','Edg/')) else 'other'
-                # Bounded local diagnostics only; never served as public browser assets.
-                destination=project/'.local'/f'browser-startup-{browser}.json'
-                destination.write_text(json.dumps(report,indent=2)+'\n')
+                (self.project/'.local'/f'browser-startup-{browser}.json').write_text(json.dumps(report,indent=2)+'\n')
                 self.send_response(204);self.end_headers()
-            except (ValueError,TypeError,UnicodeError):self.send_error(400)
+            except TimeoutError as error:self.json_reply({'error':str(error)},408)
+            except (ValueError,KeyError,TypeError,UnicodeError) as error:self.json_reply({'error':str(error)},400)
         def do_GET(self):
-            url=urlsplit(self.path)
-            if url.path.startswith('/debug/'):self.debug_get(url);return
-            if url.path.startswith('/disc/'):
-                try:
-                    index=int(url.path.removeprefix('/disc/'));q=parse_qs(url.query)
+            try:
+                if not self.route():return
+                if self.local_path=='/workspace':
+                    if not self.debug_guard(False):return
+                    self.json_reply({'projects':workspace.list(),'selected':workspace.describe(self.identity),'artifacts':list_artifacts(self.project),'selectedArtifact':self.artifact});return
+                if self.local_path.startswith('/debug/'):self.debug_get();return
+                if self.local_path.startswith('/disc/'):
+                    if not self.debug_guard(False):return
+                    tracks=read_json(self.project/'.local/source-lock.json')['tracks'];index=int(self.local_path.removeprefix('/disc/'));q=parse_qs(self.query)
                     start=int(q['offset'][0]);length=int(q['length'][0])
-                    if not 0<=index<len(tracks) or start<0 or not 1<=length<=1024*1024:raise ValueError()
+                    if not 0<=index<len(tracks) or start<0 or not 1<=length<=1024*1024:raise ValueError('Invalid disc range')
                     with Path(tracks[index]['path']).open('rb') as f:f.seek(start);data=f.read(length)
-                    self.send_response(200);self.send_header('Content-Type','application/octet-stream');self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data)
-                except (ValueError,KeyError,IndexError):self.send_error(400)
-            else:super().do_GET()
-        def translate_path(self,path):
-            relative=urlsplit(path).path.lstrip('/') or 'index.html'
-            target=(root/relative).resolve()
-            if not target.is_relative_to(root) or not target.is_file():return str(root/'__missing__')
-            return str(target)
+                    self.send_response(200);self.send_header('Content-Type','application/octet-stream');self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data);return
+                if self.artifact and self.local_path.startswith('/files/'):
+                    if not self.debug_guard(False):return
+                    name=self.local_path.removeprefix('/files/')
+                    if name not in [f['name'] for f in self.receipt['files']]:self.send_error(404);return
+                    target=(self.project/'.local/artifacts'/self.artifact/name).resolve()
+                    if not target.is_relative_to((self.project/'.local/artifacts'/self.artifact).resolve()):self.send_error(404);return
+                    self.download=True;self.send_file(target);return
+                if self.artifact and self.local_path in ('/receipt.json','/output.log','/stage.json','/port.json'):
+                    if not self.debug_guard(False):return
+                    name='artifact.json' if self.local_path=='/receipt.json' else self.local_path[1:]
+                    self.send_file(self.project/'.local/artifacts'/self.artifact/name);return
+                name=self.local_path.lstrip('/') or 'index.html'
+                target=(self.root/name).resolve()
+                if not target.is_relative_to(self.root.resolve()):self.send_error(404);return
+                if not self.artifact and name in WEB_NAMES-{'game.js','build.json'}:
+                    # Current workspaces use current tools. Historical builds retain their tools.
+                    target=kit/'runtime/web'/name
+                if name in ('index.html','player.html') and target.is_file():
+                    info=workspace.describe(self.identity);ready=self.receipt['runnable'] if self.artifact else info['browserReady']
+                    data=target.read_text().replace('>Dreamcast game</strong>','>'+html.escape(info['title'])+'</strong>')
+                    data=data.replace('<body ',f'<body data-build-ready="{str(ready).lower()}" ')
+                    self.send_bytes(data.encode(),'text/html; charset=utf-8');return
+                self.send_file(target)
+            except (ValueError,KeyError,TypeError,UnicodeError,IndexError) as error:self.json_reply({'error':str(error)},400)
+        def send_bytes(self,data,mime):
+            self.send_response(200);self.send_header('Content-Type',mime);self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data)
+        def send_file(self,path):
+            if not path.is_file():self.send_error(404);return
+            # Stream build files rather than buffering large WASM downloads.
+            self.send_response(200);self.send_header('Content-Type',self.guess_type(str(path)));
+            if getattr(self,'download',False):self.send_header('Content-Disposition','attachment; filename="'+path.name+'"')
+            self.send_header('Content-Length',str(path.stat().st_size));self.end_headers()
+            with path.open('rb') as source:self.copyfile(source,self.wfile)
         def end_headers(self):
             self.send_header('Cache-Control','no-store');self.send_header('X-Content-Type-Options','nosniff');super().end_headers()
     server=ThreadingHTTPServer(('127.0.0.1',args.port),Handler)
-    broker=DebugBroker(project)
-    connection=project/'.local/debug-connection.json'
-    connection.write_text(json.dumps({'token':broker.token,'url':f'http://127.0.0.1:{args.port}'})+'\n');connection.chmod(0o600)
-    print(f'Workbench: http://127.0.0.1:{args.port}/ — Player: /player.html',flush=True)
+    context(default)
+    print(f'Workbench: http://127.0.0.1:{args.port}/ — Projects: /projects/<id>/ — Player: /player.html',flush=True)
     server.serve_forever()
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('--project',required=True);p.add_argument('--port',type=int,default=4390);serve(p.parse_args())
+    p=argparse.ArgumentParser();p.add_argument('--project',required=True);p.add_argument('--port',type=int,default=4390);p.add_argument('--workspace',default=str(DEFAULT));serve(p.parse_args())

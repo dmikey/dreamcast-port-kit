@@ -23,8 +23,9 @@ def build(args, kit, error, verify, write_json):
     if profile is None and (project / 'title-profile.json').exists():
         profile = json.loads((project / 'title-profile.json').read_text())
     required = ['loadAddress','runtimeEntry','irqEntry','irqPushRegisters','stackPointer','vectorBase','ramBytes']
-    if not profile or any(profile.get(k) is None for k in required):
-        raise error('Native bring-up requires a verified title profile: ' + ', '.join(required))
+    missing=[k for k in required if not profile or profile.get(k) is None]
+    if missing:
+        raise error('Native bring-up requires verified title-profile fields: ' + ', '.join(missing))
     if profile['executableSHA1'] != manifest['executable']['sha1']:
         raise error('Title profile is for a different executable')
     generated = project / '.local/generated'

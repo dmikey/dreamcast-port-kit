@@ -1,5 +1,12 @@
 /* The original executable, ARM7, hardware, texture decode and GL run here. */
 'use strict';
+// Legacy compiled disc URLs are rooted at /disc. Scope them to this project's
+// worker directory so simultaneous games never read another project's tracks.
+if(typeof self.fetch==='function'&&self.location){
+ const originalFetch=self.fetch.bind(self);
+ self.fetch=(resource,options)=>originalFetch(typeof resource==='string'&&resource.startsWith('/disc/')?new URL('.'+resource,self.location.href).href:resource,options);
+}
+
 var Module;let ready=false,started=false,lastInput=null,logs=[],paused=false,resumeWorker=null;
 function flushLogs(){if(logs.length){postMessage({kind:'logs',lines:logs});logs=[];}}
 function log(...parts){if(logs.length<512)logs.push(parts.join(' '));}

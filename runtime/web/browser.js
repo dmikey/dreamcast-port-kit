@@ -25,7 +25,7 @@ let runtimeReady=false,buildInfo=null,workerRuntime=null;const measurements=[];
 function reportStartup(reason){
  if(typeof fetch!=='function')return;
  const payload={schemaVersion:1,reason:String(reason).slice(0,1000),userAgent:navigator.userAgent||'',runtimeReady,events:diagnostics.snapshot().slice(-40).map(e=>({kind:e.kind,message:e.message.slice(0,1000)}))};
- fetch('/diagnostics',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).catch(()=>{});
+ fetch('diagnostics',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).catch(()=>{});
 }
 function startupFailure(reason){runtimeState('error');const error=document.querySelector('#runtime-error');error.hidden=false;error.textContent='Game could not start: '+reason;output('[STARTUP] '+reason);reportStartup(reason);}
 var Module={onRuntimeInitialized:()=>{runtimeReady=true;runtimeState('running');const pause=document.querySelector('#pause-game');if(pause)pause.disabled=false;reportStartup('Runtime initialized');},canvas:document.querySelector('#canvas'),print:output,printErr:output,setStatus:text=>{if(text)status.textContent=text;},onAbort:reason=>{status.textContent='Execution stopped. See runtime output.';output('Runtime aborted:',reason);}};
@@ -34,6 +34,7 @@ Module.onExit=code=>{if(code)startupFailure('Runtime exited with code '+code+'. 
 Module.portAudioPush=samples=>{if(typeof portAudio!=='undefined')portAudio.push(samples);};
 Module.portBrowserYield=()=>typeof portBrowserScheduler!=='undefined'?portBrowserScheduler.yield():new Promise(resolve=>setTimeout(resolve,0));
 function startRuntime(startAudio=true){
+ if(document.body?.dataset?.buildReady==='false')throw new Error('This project has no browser build yet. See Artifacts for the next required stage.');
  if(typeof WebAssembly==='undefined'){startupFailure('This browser does not provide WebAssembly.');return;}
  if(typeof Worker==='undefined'||typeof Module.canvas.transferControlToOffscreen!=='function'){startupFailure('Web Workers and WebGL OffscreenCanvas are required (Safari 17 or newer).');return;}
  if(startAudio&&typeof portAudio!=='undefined')portAudio.start().catch(error=>{output('[AUDIO] '+error.message);reportStartup('Audio: '+error.message);});

@@ -1,11 +1,11 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Dreamcast Port Lab</title><link rel="stylesheet" href="browser.css"></head><body class="workbench-page">
-<header class="app-bar"><div class="brand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M7 5h10l3 12-3 2-3-3h-4l-3 3-3-2L7 5Z"/><path d="M7 10h5M9.5 7.5v5"/><circle cx="16" cy="10" r="1"/></svg><strong>Dreamcast <span>Port Lab</span></strong><span class="workspace-badge">WORKBENCH</span></div><span class="local-badge"><i></i> Local workspace</span></header>
+<header class="app-bar"><div class="brand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M7 5h10l3 12-3 2-3-3h-4l-3 3-3-2L7 5Z"/><path d="M7 10h5M9.5 7.5v5"/><circle cx="16" cy="10" r="1"/></svg><strong>Dreamcast <span>Port Lab</span></strong><span class="workspace-badge">WORKBENCH</span></div><label class="project-switch"><span>PROJECT</span><select id="project-select" aria-label="Project"><option>Loading projects…</option></select></label></header>
 <main class="workbench">
  <section class="preview-pane" aria-label="Game preview">
   <div class="pane-heading"><div class="pane-title"><strong id="game-title">Dreamcast game</strong><span class="session-state"><i></i><span id="session-label">Stopped</span></span></div><div class="preview-actions"><button id="start" class="primary-button">▶ Start</button><button id="pause-game" disabled>Pause</button><a id="open-player" href="player.html" target="_blank" rel="noopener">Open player <span aria-hidden="true">↗</span></a></div></div>
   <div class="controller-strip"><span id="controller" role="status">Keyboard &amp; touch ready</span><button id="toggle-pad" aria-pressed="true">On-screen controls: on</button></div>
   <p id="runtime-error" role="alert" hidden></p><p id="status" role="status" hidden></p>
-  <div class="stage-screen"><div class="game-stage"><canvas id="canvas" width="640" height="480" tabindex="0" aria-label="Game display"></canvas>
+  <div class="stage-screen"><div id="project-empty" class="project-empty" hidden><span class="eyebrow">PROJECT BRING-UP</span><h1>No browser build yet</h1><p id="project-next-stage"></p><button id="show-artifacts">View artifacts</button></div><div class="game-stage"><canvas id="canvas" width="640" height="480" tabindex="0" aria-label="Game display"></canvas>
 <div id="touch-pad" aria-label="Dreamcast touch controller">
 <button class="trigger trigger-l" data-axis="brake" aria-label="L trigger: brake">L <small>BRAKE</small></button>
 <button class="trigger trigger-r" data-axis="gas" aria-label="R trigger: accelerate">R <small>ACCELERATE</small></button>
@@ -20,7 +20,7 @@
  <aside class="inspector" aria-label="Test and debug tools">
   <div class="inspector-heading"><strong>Inspector</strong><span>LIVE TOOLS</span></div>
   <div class="inspector-tabs" role="tablist" aria-label="Inspector tools">
-   <button id="tab-runtime" role="tab" aria-selected="true" aria-controls="panel-runtime" data-panel="runtime">Runtime</button><button id="tab-input" role="tab" aria-selected="false" aria-controls="panel-input" data-panel="input" tabindex="-1">Input</button><button id="tab-render" role="tab" aria-selected="false" aria-controls="panel-render" data-panel="render" tabindex="-1">Render</button><button id="tab-audio" role="tab" aria-selected="false" aria-controls="panel-audio" data-panel="audio" tabindex="-1">Audio</button>
+   <button id="tab-runtime" role="tab" aria-selected="true" aria-controls="panel-runtime" data-panel="runtime">Runtime</button><button id="tab-input" role="tab" aria-selected="false" aria-controls="panel-input" data-panel="input" tabindex="-1">Input</button><button id="tab-render" role="tab" aria-selected="false" aria-controls="panel-render" data-panel="render" tabindex="-1">Render</button><button id="tab-artifacts" role="tab" aria-selected="false" aria-controls="panel-artifacts" data-panel="artifacts" tabindex="-1">Artifacts</button><button id="tab-audio" role="tab" aria-selected="false" aria-controls="panel-audio" data-panel="audio" tabindex="-1">Audio</button>
   </div>
   <section id="panel-runtime" role="tabpanel" aria-labelledby="tab-runtime" class="inspector-panel">
    <h2>Execution</h2><div class="metric-grid"><div><span>Presented frames</span><strong id="metric-frames">—</strong></div><div><span>Average FPS</span><strong id="metric-fps">—</strong></div></div>
@@ -40,8 +40,14 @@
   <section id="panel-audio" role="tabpanel" aria-labelledby="tab-audio" class="inspector-panel" hidden>
    <h2>Audio output</h2><p id="audio-status" role="status" class="readout">Sound: off</p><div class="button-stack"><button id="enable-audio">Enable sound</button><button id="mute-audio">Mute</button><button id="capture-audio">Capture 8 seconds of game audio</button></div><h2>Live signal</h2><dl class="properties"><div><dt>Source frames</dt><dd id="metric-audio">—</dd></div><div><dt>Nonzero frames</dt><dd id="metric-nonzero">—</dd></div><div><dt>Underruns</dt><dd id="metric-underruns">—</dd></div></dl><p class="tool-note">Sound begins after a user gesture. Captures contain the game mixer output.</p>
   </section>
+  <section id="panel-artifacts" role="tabpanel" aria-labelledby="tab-artifacts" class="inspector-panel" hidden>
+   <div class="artifact-panel-heading"><h2>Project artifacts</h2><button id="refresh-artifacts" aria-label="Refresh artifacts">↻</button></div>
+   <p id="project-artifact-status" class="tool-note">Loading project history…</p>
+   <div id="project-evidence" class="evidence-strip"></div>
+   <div id="artifact-list" aria-live="polite"></div>
+  </section>
  </aside>
  <section class="console-pane" aria-label="Runtime console"><details open><summary><span>Console <small>RUNTIME OUTPUT</small></span></summary><div class="console-actions"><span id="console-count">0 events</span><button id="clear-console">Clear</button><button id="download-diagnostics">Download diagnostics</button></div><pre id="log" aria-live="off"></pre></details></section>
 </main>
-<script src="runtime-bridge.js"></script><script src="audio.js"></script><script src="workbench.js"></script><script src="debug-bridge.js"></script><script src="browser.js"></script>
+<script src="runtime-bridge.js"></script><script src="audio.js"></script><script src="workbench.js"></script><script src="debug-bridge.js"></script><script src="browser.js"></script><script src="projects.js"></script>
 </body></html>

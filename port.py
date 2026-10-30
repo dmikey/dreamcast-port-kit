@@ -416,7 +416,7 @@ def main():
     p.add_argument('--project',required=True);p.add_argument('--seconds',type=float,default=10)
     p.add_argument('--capture-frame',type=int,help='Capture this submitted graphics frame to .local/native/frame.ppm')
     args = parser.parse_args()
-    try:
+    def execute():
         if args.command == 'prepare': prepare(args)
         elif args.command == 'translate': translate(args)
         elif args.command == 'bootstrap': bootstrap(args)
@@ -430,10 +430,31 @@ def main():
             import native
             return native.run(args,PortError,verify_project,write_json)
         else: print(json.dumps(verify_project(Path(args.project).resolve())[0], indent=2))
-    except (PortError, OSError, ValueError, subprocess.CalledProcessError) as error:
-        print(f'PORT ERROR: {error}', file=sys.stderr)
-        return 2
-    return 0
+        return 0
+    if args.command in ('status','bootstrap'):
+        try:return execute()
+        except (PortError,OSError,ValueError,KeyError,subprocess.CalledProcessError) as error:
+            print(f'PORT ERROR: {error}',file=sys.stderr);return 2
+    import artifacts,contextlib
+    project=Path(args.project).resolve();local=project/'.local';local.mkdir(parents=True,exist_ok=True)
+    class Tee:
+        def __init__(self,stream,log):self.stream,self.log=stream,log
+        def write(self,text):self.log.write(text);self.log.flush();return self.stream.write(text)
+        def flush(self):self.log.flush();self.stream.flush()
+    result=0;message='Stage completed; runtime behavior is not implied.'
+    with tempfile.NamedTemporaryFile(mode='w',prefix='stage-',suffix='.log',dir=local,delete=False) as log:
+        with contextlib.redirect_stdout(Tee(sys.stdout,log)),contextlib.redirect_stderr(Tee(sys.stderr,log)):
+            try:result=execute()
+            except (PortError,OSError,ValueError,KeyError,subprocess.CalledProcessError) as error:
+                message=str(error);print(f'PORT ERROR: {error}',file=sys.stderr);result=2
+    try:
+        receipt=artifacts.record(project,args.command,'succeeded' if result==0 else 'failed',message,log.name)
+        print('Artifact: '+receipt['id'])
+    except (OSError,ValueError) as error:
+        print(f'ARTIFACT ERROR: {error}',file=sys.stderr);result=2
+    finally:Path(log.name).unlink(missing_ok=True)
+    return result
+
 
 
 if __name__ == '__main__':

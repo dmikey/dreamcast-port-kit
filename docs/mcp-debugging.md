@@ -32,10 +32,14 @@ The browser server and MCP process must point at the same local project.
 
 ## Tools
 
+Call `list_projects` to discover workbench URLs and `list_artifacts` for this
+project's saved stages. The MCP process is scoped to its `--project` directory.
 Call `list_sessions` first and select the intended workbench or player session.
 
 | Tool | Purpose |
 | --- | --- |
+| `list_projects` | Discover registered local projects and workbench URLs. |
+| `list_artifacts` | Inspect this project's build history and saved receipts. |
 | `list_sessions` | Discover local sessions, connection status and runtime state. |
 | `get_status` | Read readiness, pause, progress, input, audio and build metadata. |
 | `get_events` | Read up to 200 events after a sequence number. |

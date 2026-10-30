@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Typed stdio MCP tools for a running local Dreamcast Port Lab workspace."""
-import argparse,json
+import argparse,json,re
 from pathlib import Path
 from typing import Annotated,Literal
 from urllib.parse import urlencode,urlsplit
@@ -16,11 +16,13 @@ Steering=Annotated[float,Field(ge=-1,le=1)]
 
 class WorkspaceClient:
     def __init__(self,project):self.project=Path(project).resolve()
-    def request(self,path,body=None):
+    def request(self,path,body=None,workspace=False):
         connection=json.loads((self.project/'.local/debug-connection.json').read_text())
         parsed=urlsplit(connection['url'])
         if parsed.scheme!='http' or parsed.hostname not in ('127.0.0.1','localhost') or parsed.username or parsed.path or parsed.query or parsed.fragment:raise ValueError('Debug connection must be a loopback HTTP origin')
-        request=Request(connection['url']+'/debug/'+path,data=None if body is None else json.dumps(body).encode(),headers={'Authorization':'Bearer '+connection['token'],'Content-Type':'application/json'})
+        base=connection.get('basePath','/')
+        if not re.fullmatch(r'/(?:projects/[a-z0-9][a-z0-9-]{0,95}/)?',base):raise ValueError('Invalid project debug scope')
+        request=Request(connection['url']+base+('workspace' if workspace else 'debug/'+path),data=None if body is None else json.dumps(body).encode(),headers={'Authorization':'Bearer '+connection['token'],'Content-Type':'application/json'})
         try:
             with urlopen(request,timeout=15) as response:return json.load(response)
         except HTTPError as error:
@@ -37,6 +39,16 @@ def create_server(project):
     server=FastMCP('Dreamcast Port Lab',instructions='Connect to a locally served workbench or standalone player. List sessions before selecting one. Input tests are bounded and release automatically. Session commands are acknowledged by the browser; a timeout is not retried. Browser audio may require the user to press Play/Enable sound. No arbitrary code execution or raw memory writes are exposed.')
     read=ToolAnnotations(readOnlyHint=True,destructiveHint=False,openWorldHint=False)
     change=ToolAnnotations(readOnlyHint=False,destructiveHint=False,openWorldHint=False)
+    @server.tool(annotations=read)
+    def list_projects()->dict:
+        """List registered local projects, their build readiness and workbench URLs."""
+        value=client.request('',workspace=True)
+        return {'projects':value['projects'],'selected':value['selected']['id']}
+    @server.tool(annotations=read)
+    def list_artifacts()->dict:
+        """List this project's immutable stage receipts, failures and runnable browser snapshots."""
+        value=client.request('',workspace=True)
+        return {'project':value['selected'],'artifacts':value['artifacts']}
     @server.tool(annotations=read)
     def list_sessions()->dict:
         """List local workbench and player sessions, their state and connection status."""
