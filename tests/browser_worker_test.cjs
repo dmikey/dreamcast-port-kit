@@ -15,7 +15,8 @@ messages[0].onmessage({data:{kind:'logs',lines:['one','two']}});assert.deepEqual
 messages[0].onmessage({data:{kind:'error',message:'failed'}});assert.equal(events.at(-1),'failed');runtime.start();assert.equal(transferred,1);
 // Worker-side handshake, buffered input, batched logs and transferable audio.
 const posted=[],imports=[],self={addEventListener(){}},input=[];class OffscreenCanvas{}
-const worker=vm.createContext({self,OffscreenCanvas,GL:{offscreenCanvases:{}},postMessage:(message,transfers)=>posted.push({message,transfers}),importScripts:(...names)=>imports.push(names),portBrowserScheduler:{yield:()=>Promise.resolve()}});
+const timers=new Map();let timerId=0;
+const worker=vm.createContext({performance:{now:()=>123},setTimeout:fn=>{timers.set(++timerId,fn);return timerId;},clearTimeout:id=>timers.delete(id),self,OffscreenCanvas,GL:{offscreenCanvases:{}},postMessage:(message,transfers)=>posted.push({message,transfers}),importScripts:(...names)=>imports.push(names),portBrowserScheduler:{yield:()=>Promise.resolve()}});
 vm.runInContext(read('runtime-worker.js'),worker);
 self.onmessage({data:{kind:'input',values:[8,300,-1,999,-999]}});
 self.onmessage({data:{kind:'start',canvas:new OffscreenCanvas()}});assert.equal(imports.length,1);assert.deepEqual(imports[0],['browser-scheduler.js','game.js']);
@@ -23,4 +24,22 @@ worker.Module._port_input=(...values)=>input.push(values);worker.Module.onRuntim
 worker.Module.preRun[0]();assert.equal(worker.GL.offscreenCanvases.canvas,worker.Module.canvas);
 const samples=new Float32Array([.25,-.25]);worker.Module.portAudioPush(samples);assert.equal(posted.at(-1).message.samples,samples);assert.equal(posted.at(-1).transfers[0],samples.buffer);
 worker.Module.print('line');worker.Module.portBrowserYield();assert.equal(posted.at(-1).message.lines[0],'line');
+self.onmessage({data:{kind:'pulse',values:[8,0,0,0,0],duration:800}});assert.deepEqual(input.at(-1),[8,0,0,0,0]);
+assert.equal(timers.size,1);const release=timers.values().next().value;timers.clear();release();assert.deepEqual(input.at(-1),[0,0,0,0,0]);
+self.onmessage({data:{kind:'pulse',values:[2,0,255,0,0],duration:30000}});self.onmessage({data:{kind:'input',values:[4,0,0,0,0]}});assert.equal(timers.size,0);assert.deepEqual(input.at(-1),[4,0,0,0,0]);
+const count=input.length;self.onmessage({data:{kind:'pulse',values:[8,0,0,0,0],duration:60001}});assert.equal(input.length,count);
+let captured=0;worker.Module._port_frame_capture=()=>captured++;self.onmessage({data:{kind:'capture-frame'}});assert.equal(captured,1);
+self.onmessage({data:{kind:'replay',steps:[{atMs:0,values:[8,0,0,0,0]},{atMs:1000,values:[0,0,0,0,0]}]}});assert.equal(timers.size,3);timers.values().next().value();assert.deepEqual(input.at(-1),[8,0,0,0,0]);
+self.onmessage({data:{kind:'input',values:[2,0,0,0,0]}});assert.equal(timers.size,0,'manual input cancels replay');
+self.onmessage({data:{kind:'replay',steps:[{atMs:180001,values:[8,0,0,0,0]}]}});assert.equal(timers.size,0,'unbounded replays are rejected');
+self.onmessage({data:{kind:'replay',steps:[{atMs:1,values:[8,0,0,0,0]},{atMs:0,values:[0,0,0,0,0]}]}});assert.equal(timers.size,0,'out-of-order replays are rejected');
+// A pause cancels input and partial measurements rather than reporting false FPS.
+worker.Module._port_frame_count=()=>100;
+self.onmessage({data:{kind:'benchmark'}});assert.equal(timers.size,1);
+self.onmessage({data:{kind:'benchmark'}});assert.equal(timers.size,1,'only one measurement may run');
+self.onmessage({data:{kind:'pause',value:true}});assert.equal(timers.size,0);assert.deepEqual(input.at(-1),[0,0,0,0,0]);
+self.onmessage({data:{kind:'benchmark'}});assert.equal(timers.size,0,'paused execution cannot be measured');
+const pausedYield=worker.Module.portBrowserYield();
+self.onmessage({data:{kind:'pause',value:false}});
+pausedYield.then(()=>assert.equal(timers.size,0)).catch(error=>{console.error(error);process.exitCode=1;});
 console.log('Worker contract passed: canvas transfer, input batching/release, ready handshake, logs, audio transfer, diagnostics.');

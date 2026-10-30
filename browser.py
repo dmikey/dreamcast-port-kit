@@ -3,6 +3,20 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 import hashlib,json,subprocess,shutil,os,sys
 
+def publish_bundle(output):
+    # Publish the loader only after its content-addressed WASM is complete.
+    # A running server must never pair an old loader with a partial new link.
+    wasm_bytes=(output/'game.next.wasm').read_bytes()
+    wasm_name='game-'+hashlib.sha256(wasm_bytes).hexdigest()[:16]+'.wasm'
+    destination=output/wasm_name
+    if not destination.exists() or destination.read_bytes()!=wasm_bytes:
+        pending=output/(wasm_name+'.pending')
+        pending.write_bytes(wasm_bytes);pending.replace(destination)
+    loader=(output/'game.next.js').read_text().replace('game.next.wasm',wasm_name)
+    (output/'game.publish.js').write_text(loader)
+    (output/'game.publish.js').replace(output/'game.js')
+    shutil.copyfile(output/'game.next.wasm',output/'game.wasm')
+
 def build(args,kit,error,verify,write_json):
     import native
     os.environ['PATH']=str(Path(sys.executable).parent)+os.pathsep+os.environ.get('PATH','')
@@ -53,6 +67,7 @@ def build(args,kit,error,verify,write_json):
         v->looped=0;return value;
     }
     if (off == AICA_INTREQ)''')
+    hardware=hardware.replace('                        resp[2] = (uint32_t)ctrl->buttons', '                        {static unsigned last=~0u,changes;unsigned value=ctrl->buttons|((unsigned)ctrl->rtrig<<16)|((unsigned)ctrl->ltrig<<24);if(value!=last){if(changes<64){changes++;printf("[MAPLE-INPUT] buttons=%04X rt=%u lt=%u response=%08X\\n",ctrl->buttons,ctrl->rtrig,ctrl->ltrig,header_2);}last=value;}}\n                        resp[2] = (uint32_t)ctrl->buttons')
     (output/'hardware.c').write_text(hardware)
     bios=(core/'src/hal/dc_bios.c').read_text()
     bios=bios.replace('#define GDC_MAX_TRACKS 24','#include "browser_disc.h"\n#define GDC_MAX_TRACKS 24')
@@ -95,9 +110,10 @@ def build(args,kit,error,verify,write_json):
         return obj
     with ThreadPoolExecutor(max_workers=3) as pool:compiled=list(pool.map(compile_one,sources))
     _,exe=verify(project)
-    result=subprocess.run([sys.executable,str(emcc),*map(str,compiled),*link_optimization,'-g2','-sENVIRONMENT=worker','-sOFFSCREENCANVAS_SUPPORT=1','-sMIN_SAFARI_VERSION=170000','-sMIN_WEBGL_VERSION=2','-sMAX_WEBGL_VERSION=2','-sASYNCIFY=1','-sASYNCIFY_STACK_SIZE=4194304','-sSTACK_SIZE=16777216','-sINITIAL_MEMORY=134217728','-sALLOW_MEMORY_GROWTH=1','-sMAXIMUM_MEMORY=1073741824','-sASSERTIONS='+('1' if args.abi else '0'),'--embed-file',str(exe)+'@/game.bin','-o',str(output/'game.js')],capture_output=True,text=True)
+    result=subprocess.run([sys.executable,str(emcc),*map(str,compiled),*link_optimization,'-g2','-sENVIRONMENT=worker','-sOFFSCREENCANVAS_SUPPORT=1','-sMIN_SAFARI_VERSION=170000','-sMIN_WEBGL_VERSION=2','-sMAX_WEBGL_VERSION=2','-sASYNCIFY=1','-sASYNCIFY_STACK_SIZE=4194304','-sSTACK_SIZE=16777216','-sINITIAL_MEMORY=134217728','-sALLOW_MEMORY_GROWTH=1','-sMAXIMUM_MEMORY=1073741824','-sASSERTIONS='+('1' if args.abi else '0'),'--embed-file',str(exe)+'@/game.bin','-o',str(output/'game.next.js')],capture_output=True,text=True)
     (output/'link.log').write_text(result.stdout+result.stderr)
     if result.returncode:raise error('WebAssembly link: '+result.stderr[-2500:])
-    for name in ('index.html','browser.js','browser.css','browser-scheduler.js','runtime-bridge.js','runtime-worker.js','audio.js','audio-worklet.js'):shutil.copyfile(kit/'runtime/web'/name,output/name)
+    publish_bundle(output)
+    for name in ('index.html' ,'browser.js','browser.css','browser-scheduler.js','runtime-bridge.js','runtime-worker.js','audio.js','audio-worklet.js'):shutil.copyfile(kit/'runtime/web'/name,output/name)
     write_json(output/'build.json',{'target':'browser-webgl2','execution':'dedicated-worker-offscreen','optimization':'O2-debug' if args.abi else 'O3-thinlto' if optimized else 'O2','playable':False,'abiChecks':bool(args.abi),'scheduler':'message-channel-8ms','sourceSetSHA256':json.loads((project/'port.json').read_text())['sourceSetSHA256'],'wasmSHA256':hashlib.sha256((output/'game.wasm').read_bytes()).hexdigest()})
     print('Browser build ready. Run serve-browser; gameplay remains unverified.')

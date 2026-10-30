@@ -318,3 +318,26 @@ about 19 FPS and approximately 2.1 seconds of timer wait per 5-second window.
 The user subsequently confirmed the updated build works. A local Chromium
 check measured about 50–70 ms of yield waiting per five-second window; that
 number is not a new Safari FPS measurement.
+
+## Rendering diagnostics and local reference measurement
+
+The worker can run a bounded input timeline, capture the current frame or VRAM,
+isolate rendering passes, pause execution, and measure 30 seconds of platform
+presentations. These controls live under Runtime output. Replay is a debugging
+input script, not an authoritative or deterministic game replay. Manual input
+and pause cancel a pending script. Diagnostic render modes must be restored to
+Normal before recording performance. GPU completion is not measured.
+
+Texture reads now mirror at the 8 MiB VRAM boundary, including cache comparisons
+that cross it. Vertex interpolation recovers clip W from PVR reciprocal W.
+Material state honors signed-area culling and TSP blending in opaque lists as
+well as translucent lists. Flycast's opaque-list blending behavior is documented
+in its [OpenGL renderer](https://github.com/flyinghead/flycast/blob/master/core/rend/gles/gldraw.cpp).
+These changes do not establish complete rendering fidelity.
+
+Browser rebuilds publish a content-addressed WASM file before atomically replacing
+the loader. Existing loaders retain their prior complete binary while a rebuild
+is in progress. Older content-addressed files remain for active pages.
+
+See [the local comparison record](validation/browser-comparison-2026-10-30.md)
+for the measured gameplay scene and limitations.

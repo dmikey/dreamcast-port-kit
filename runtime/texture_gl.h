@@ -36,7 +36,7 @@ static GLuint port_texture(uint32_t tcw,uint32_t tsp) {
     if(cached>=0)port_cache[cached].used=++port_texture_serial;
     if(cached>=0 && port_cache[cached].frame==port_texture_frame)return port_cache[cached].id;
     unsigned w=8<<((tsp>>3)&7),h=8<<(tsp&7),fmt=(tcw>>27)&7;
-    unsigned base=(tcw&0x1fffff)*8,linear=(tcw>>26)&1,vq=(tcw>>30)&1,mip=tcw>>31;
+    unsigned base=((tcw&0x1fffff)*8)&0x7fffff,linear=(tcw>>26)&1,vq=(tcw>>30)&1,mip=tcw>>31;
     int paletted=fmt==5 || fmt==6;
     if(paletted){linear=0;vq=0;}
     unsigned palette_format=port_palette_format;
@@ -48,8 +48,10 @@ static GLuint port_texture(uint32_t tcw,uint32_t tsp) {
     unsigned length=vq?2048+offset+w*h/4:offset+(paletted?(fmt==5?w*h/2:w*h):w*h*2);
     unsigned bank=fmt==5?((tcw>>21)&63)*16:((tcw>>25)&3)*256;
     unsigned colors=fmt==5?16:256;
-    if(cached>=0 && base+length<=0x800000 && port_cache[cached].length==length &&
-       memcmp(port_cache[cached].source,vram+base,length)==0 &&
+    unsigned first=length<0x800000-base?length:0x800000-base;
+    if(cached>=0 && port_cache[cached].length==length &&
+       memcmp(port_cache[cached].source,vram+base,first)==0 &&
+       (first==length || memcmp(port_cache[cached].source+first,vram,length-first)==0) &&
        (!paletted || (port_cache[cached].palette_format==palette_format && memcmp(port_cache[cached].palette,port_palette+bank,colors*4)==0))) {
         port_cache[cached].frame=port_texture_frame;return port_cache[cached].id;
     }
@@ -94,7 +96,6 @@ static GLuint port_texture(uint32_t tcw,uint32_t tsp) {
     glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,w,h,0,GL_RGBA,GL_UNSIGNED_BYTE,port_texels);
     port_cache[cached].source=malloc(length);
     if(!port_cache[cached].source)abort();
-    unsigned first=length<0x800000-base?length:0x800000-base;
     memcpy(port_cache[cached].source,vram+base,first);
     if(first<length)memcpy(port_cache[cached].source+first,vram,length-first);
     port_cache[cached].valid=1;port_cache[cached].used=++port_texture_serial;port_cache[cached].image_bytes=image_bytes;
@@ -111,7 +112,7 @@ static void port_draw_materials(const PVR2TriList *list,int list_type) {
         for(int i=0;i<5;i++)locations[i]=glGetUniformLocation(g_shader,names[i]);shader=g_shader;
     }
     /* Other presenters/list setup can change GL state; invalidate per list. */
-    int uniforms[5]={-1,-1,-1,-1,-1},last_depth=-1,last_write=-1;
+    int uniforms[5]={-1,-1,-1,-1,-1},last_depth=-1,last_write=-1,last_cull=-1;
     unsigned last_blend=~0u;GLuint last_texture=0;
     glActiveTexture(GL_TEXTURE0);
 
@@ -119,10 +120,14 @@ static void port_draw_materials(const PVR2TriList *list,int list_type) {
         const PVR2RenderVertex *v=list->vertices+at;int end=at+3;
         while(end<list->count && list->vertices[end].tcw==v->tcw && list->vertices[end].tsp==v->tsp && list->vertices[end].pcw==v->pcw && list->vertices[end].isp==v->isp)end+=3;
         static const GLenum depth_modes[]={GL_NEVER,GL_LESS,GL_EQUAL,GL_LEQUAL,GL_GREATER,GL_NOTEQUAL,GL_GEQUAL,GL_ALWAYS};
+        /* PVR signed-area culling for the expanded triangle-list winding.
+         * Flycast gldraw.cpp documents modes 2/3 as negative/positive. */
+        int cull=(v->isp>>27)&3;
+        if(cull!=last_cull){if(cull<2)glDisable(GL_CULL_FACE);else{glEnable(GL_CULL_FACE);glCullFace(cull==2?GL_FRONT:GL_BACK);}last_cull=cull;}
         int depth=(v->isp>>29)&7,write=!(list_type==PVR2_LIST_TRANS || (v->isp&(1u<<26)));
         if(depth!=last_depth){glDepthFunc(depth_modes[depth]);last_depth=depth;}
         if(write!=last_write){glDepthMask(write?GL_TRUE:GL_FALSE);last_write=write;}
-        if(list_type==PVR2_LIST_TRANS){
+        { /* Blend instructions also apply to opaque lighting passes. */
             static const GLenum src_modes[]={GL_ZERO,GL_ONE,GL_DST_COLOR,GL_ONE_MINUS_DST_COLOR,GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA,GL_DST_ALPHA,GL_ONE_MINUS_DST_ALPHA};
             static const GLenum dst_modes[]={GL_ZERO,GL_ONE,GL_SRC_COLOR,GL_ONE_MINUS_SRC_COLOR,GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA,GL_DST_ALPHA,GL_ONE_MINUS_DST_ALPHA};
             unsigned blend=v->tsp>>26;

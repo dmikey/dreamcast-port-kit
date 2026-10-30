@@ -18,15 +18,15 @@ function output(...parts){
  if(text.includes('entering title code'))status.textContent='Running original game code. Local development build.';
  if(!text.startsWith('[STARTUP]')&&(/\[PVR2\] Shader (compile|link) error/.test(text)||/\[PLATFORM\].*failed:/.test(text)))startupFailure(text);
 }
-setInterval(()=>{flushLog();if(runtimeReady&&lastProgress&&!freezeReported&&performance.now()-lastProgress>4000){freezeReported=true;output('[WATCHDOG] No execution progress for 4 seconds.');}},250);
-let runtimeReady=false,buildInfo=null,workerRuntime=null;
+setInterval(()=>{flushLog();if(runtimeReady&&!gamePaused&&lastProgress&&!freezeReported&&performance.now()-lastProgress>4000){freezeReported=true;output('[WATCHDOG] No execution progress for 4 seconds.');}},250);
+let runtimeReady=false,buildInfo=null,workerRuntime=null;const measurements=[];
 function reportStartup(reason){
  if(typeof fetch!=='function')return;
  const payload={schemaVersion:1,reason:String(reason).slice(0,1000),userAgent:navigator.userAgent||'',runtimeReady,events:diagnostics.snapshot().slice(-40).map(e=>({kind:e.kind,message:e.message.slice(0,1000)}))};
  fetch('/diagnostics',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).catch(()=>{});
 }
 function startupFailure(reason){const error=document.querySelector('#runtime-error');error.hidden=false;error.textContent='Game could not start: '+reason;output('[STARTUP] '+reason);reportStartup(reason);}
-var Module={onRuntimeInitialized:()=>{runtimeReady=true;reportStartup('Runtime initialized');},canvas:document.querySelector('#canvas'),print:output,printErr:output,setStatus:text=>{if(text)status.textContent=text;},onAbort:reason=>{status.textContent='Execution stopped. See runtime output.';output('Runtime aborted:',reason);}};
+var Module={onRuntimeInitialized:()=>{runtimeReady=true;const pause=document.querySelector('#pause-game');if(pause)pause.disabled=false;reportStartup('Runtime initialized');},canvas:document.querySelector('#canvas'),print:output,printErr:output,setStatus:text=>{if(text)status.textContent=text;},onAbort:reason=>{status.textContent='Execution stopped. See runtime output.';output('Runtime aborted:',reason);}};
 Module.onAbort=reason=>startupFailure(String(reason));
 Module.onExit=code=>{if(code)startupFailure('Runtime exited with code '+code+'. Expand Runtime output for details.');};
 Module.portAudioPush=samples=>{if(typeof portAudio!=='undefined')portAudio.push(samples);};
@@ -38,7 +38,7 @@ document.querySelector('#start').addEventListener('click',()=>{
  if(typeof fetch==='function')fetch('build.json').then(response=>response.json()).then(info=>{buildInfo=info;}).catch(()=>{});
  document.querySelector('#start').disabled=true;status.textContent='Loading worker runtime…';reportStartup('Starting worker runtime');
  try{
-  workerRuntime=new PortWorkerRuntime(Module.canvas,{ready:()=>Module.onRuntimeInitialized(),log:output,audio:Module.portAudioPush,error:startupFailure});
+  workerRuntime=new PortWorkerRuntime(Module.canvas,{ready:()=>Module.onRuntimeInitialized(),log:output,audio:Module.portAudioPush,frame:saveFrame,vram:bytes=>saveDownload(bytes,'application/octet-stream','dreamcast-vram.bin'),benchmark:result=>{measurements.push(result);output('[BENCHMARK] '+JSON.stringify(result));},error:startupFailure});
   Module._port_button=(bit,pressed)=>workerRuntime.button(bit,pressed);
   Module._port_axes=(left,right,x,y)=>workerRuntime.axes(left,right,x,y);
   Module._port_render_capture=()=>workerRuntime.capture();
@@ -89,7 +89,7 @@ function pollController(){
 }
 function controllerFrame(){pollController();requestAnimationFrame(controllerFrame);}
 function release(){resetStick();inputActive=false;keys.clear();touch.clear();for(const b of document.querySelectorAll('[aria-pressed]'))b.setAttribute('aria-pressed','false');if(runtimeReady&&Module._port_axes){for(const bit of gameBits)Module._port_button(bit,0);Module._port_axes(0,0,0,0);}}
-window.addEventListener('keydown',event=>{if(keyButtons[event.code]||['KeyQ','KeyW'].includes(event.code)){event.preventDefault();inputActive=true;keys.add(event.code);pollController();}});
+window.addEventListener('keydown',event=>{if(event.target?.closest?.('input,textarea,select,[contenteditable="true"]'))return;if(keyButtons[event.code]||['KeyQ','KeyW'].includes(event.code)){event.preventDefault();inputActive=true;keys.add(event.code);pollController();}});
 window.addEventListener('keyup',event=>{keys.delete(event.code);pollController();});
 window.addEventListener('blur',release);window.addEventListener('focus',()=>inputActive=true);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)release();else inputActive=document.hasFocus();});
@@ -118,7 +118,20 @@ document.querySelector('#capture-render').addEventListener('click',()=>{if(runti
 
 document.querySelector('details').addEventListener('toggle',flushLog);
 document.querySelector('#download-diagnostics').addEventListener('click',()=>{
- const report={schemaVersion:1,source:'dreamcast-port-kit browser runtime',userAgent:navigator.userAgent||'',build:buildInfo,execution:workerRuntime?'dedicated-worker':'not-started',status:status.textContent,input:{requested:Module.canvas.dataset.input,appliedButtons:Module.canvas.dataset.inputApplied,lastPressed:Module.canvas.dataset.lastPressed},eventsDropped:diagnostics.dropped,events:diagnostics.snapshot(),audioOutputImplemented:true,audio:typeof portAudio==='undefined'?null:{...portAudio.stats,received:portAudio.received,nonzeroReceived:portAudio.nonzero,contextState:portAudio.context?.state,muted:portAudio.muted}};
+ const report={schemaVersion:1,source:'dreamcast-port-kit browser runtime',userAgent:navigator.userAgent||'',build:buildInfo,execution:workerRuntime?'dedicated-worker':'not-started',status:status.textContent,input:{requested:Module.canvas.dataset.input,appliedButtons:Module.canvas.dataset.inputApplied,lastPressed:Module.canvas.dataset.lastPressed},eventsDropped:diagnostics.dropped,events:diagnostics.snapshot(),measurements,diagnosticRenderMode:Number(document.querySelector('#render-mode')?.value||7),audioOutputImplemented:true,audio:typeof portAudio==='undefined'?null:{...portAudio.stats,received:portAudio.received,nonzeroReceived:portAudio.nonzero,contextState:portAudio.context?.state,muted:portAudio.muted}};
  const url=URL.createObjectURL(new Blob([JSON.stringify(report,null,2)],{type:'application/json'}));
  const link=document.createElement('a');link.href=url;link.download='dreamcast-diagnostics.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 });
+
+function saveDownload(bytes,type,name){const url=URL.createObjectURL(new Blob([bytes],{type}));const link=document.createElement('a');link.href=url;link.download=name;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+function saveFrame(bytes){saveDownload(bytes,'image/png','dreamcast-frame.png');}
+document.querySelector('#capture-vram')?.addEventListener('click',()=>workerRuntime?.vram());
+document.querySelector('#capture-frame')?.addEventListener('click',()=>workerRuntime?.frame());
+document.querySelector('#pulse-input-send')?.addEventListener('click',()=>{const values=document.querySelector('#pulse-input').value.split(',').map(Number),duration=Number(document.querySelector('#pulse-duration').value);workerRuntime?.pulse(values,duration);});
+document.querySelector('#run-input-replay')?.addEventListener('click',()=>{try{workerRuntime?.replay(JSON.parse(document.querySelector('#input-replay').value));}catch(error){output('[INPUT-REPLAY] '+error.message);}});
+document.querySelector('#measure-performance')?.addEventListener('click',()=>workerRuntime?.measure());
+
+document.querySelector('#render-mode')?.addEventListener('change',event=>workerRuntime?.mode(Number(event.target.value)));
+
+let gamePaused=false;
+document.querySelector('#pause-game')?.addEventListener('click',event=>{gamePaused=!gamePaused;workerRuntime?.pause(gamePaused);lastProgress=performance.now();freezeReported=false;event.currentTarget.textContent=gamePaused?'Resume':'Pause';if(typeof portAudio!=='undefined'&&portAudio.context){const action=gamePaused?'suspend':'resume';portAudio.context[action]?.().catch(error=>output('[AUDIO] '+error.message));}});

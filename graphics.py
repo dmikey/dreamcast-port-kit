@@ -30,6 +30,9 @@ def adapt(core,output,include,renderer):
     (output/'ta.c').write_text(ta)
     renderer=renderer.replace('    "out vec4 vColor;\\n"','    "out vec4 vColor;\\nout vec2 vUV;\\n"')
     renderer=renderer.replace('    "    vColor = aColor;\\n"','    "    vColor = aColor; vUV = aUV;\\n"')
+    # PVR vertices carry reciprocal W. Recover clip W so GPU interpolation is
+    # perspective-correct while preserving the submitted screen position.
+    renderer=renderer.replace('    "    gl_Position = vec4(x, y, z, 1.0);\\n"', '    "    float w = 1.0 / max(aPos.z, 0.000001); gl_Position = vec4(x*w, y*w, z*w, w);\\n"')
     renderer=renderer.replace('    "in vec4 vColor;\\n"','    "in vec4 vColor;\\nin vec2 vUV;\\nuniform sampler2D uTexture;\\nuniform int uTextured,uShading,uIgnoreAlpha,uUseAlpha,uPunch;\\n"')
     renderer=renderer.replace('    "    FragColor = vColor;\\n"','''    "    vec4 base=vColor; if(uUseAlpha==0)base.a=1.0; vec4 result=base;\\n"
     "    if(uTextured!=0){vec4 t=texture(uTexture,vUV);if(uIgnoreAlpha!=0)t.a=1.0;\\n"
@@ -37,22 +40,26 @@ def adapt(core,output,include,renderer):
     "    if(uPunch!=0 && result.a<0.5)discard;FragColor=result;\\n"''')
     renderer=renderer.replace('#include \"recompiler/sh4_cpu.h\"','#include \"recompiler/sh4_cpu.h\"\n#include \"hal/dc_hardware.h\"')
     renderer=renderer.replace('void pvr2_render_frame(void) {','#include "texture_gl.h"\n\nvoid pvr2_render_frame(void) {\n    port_begin_textures();')
+    # Opaque list continuations may modulate an earlier textured pass.
+    renderer=renderer.replace('            glDisable(GL_BLEND);','            glEnable(GL_BLEND);')
     renderer=renderer.replace('glDrawArrays(GL_TRIANGLES, 0, list->count);','port_draw_materials(list,draw_order[i]);')
-    renderer=renderer.replace('void pvr2_render_frame(void) {','void pvr2_render_frame(void) {\n    glEnable(GL_DEPTH_TEST); /* Framebuffer scanout disables it. */')
+    renderer=renderer.replace('void pvr2_render_frame(void) {','void pvr2_render_frame(void) {\n    if(port_render_passes&8)glDisable(GL_DEPTH_TEST);else glEnable(GL_DEPTH_TEST); /* Framebuffer scanout disables it. */')
     renderer=renderer.replace('glDepthFunc(GL_LEQUAL);','glDepthFunc(GL_GEQUAL);glClearDepthf(0.0f);')
     renderer=renderer.replace('clamp(aPos.z * 0.0001, 0.0, 1.0)','clamp(aPos.z / (1.0 + max(aPos.z,0.0)), 0.0, 1.0)')
-    renderer=renderer.replace('#include "texture_gl.h"', '#include "texture_gl.h"\n#include <emscripten.h>\nstatic int port_capture_samples;\nEMSCRIPTEN_KEEPALIVE void port_render_capture(void){port_capture_samples=128;}')
+    renderer=renderer.replace('#include "texture_gl.h"', '#include "texture_gl.h"\n#include <emscripten.h>\nstatic int port_capture_samples;static unsigned port_render_passes=7;\nEMSCRIPTEN_KEEPALIVE void port_render_mode(unsigned mode){port_render_passes=mode&15;}\nEMSCRIPTEN_KEEPALIVE void port_render_capture(void){port_capture_samples=128;}')
     renderer=renderer.replace('port_draw_materials(list,draw_order[i]);', '''{
-            uint32_t last_tcw=~0u,last_pcw=~0u,last_tsp=~0u;
-            for(int n=0;n<list->count && port_capture_samples>0;n+=3){
+            int samples_left=port_capture_samples;uint32_t last_tcw=~0u,last_pcw=~0u,last_tsp=~0u;
+            for(int n=0;n<list->count && samples_left>0;n+=3){
                 const PVR2RenderVertex *v=list->vertices+n;
                 if(v->tcw==last_tcw && v->pcw==last_pcw && v->tsp==last_tsp)continue;
-                last_tcw=v->tcw;last_pcw=v->pcw;last_tsp=v->tsp;port_capture_samples--;
+                last_tcw=v->tcw;last_pcw=v->pcw;last_tsp=v->tsp;samples_left--;
                 printf("[MATERIAL] list=%d pcw=%08X isp=%08X tsp=%08X tcw=%08X z=%.6f uv=%.3f,%.3f rgba=%.3f,%.3f,%.3f,%.3f\\n",draw_order[i],v->pcw,v->isp,v->tsp,v->tcw,v->z,v->u,v->v,v->r,v->g,v->b,v->a);
             }
             port_draw_materials(list,draw_order[i]);
         }''')
     renderer=renderer.replace('#include "texture_gl.h"', '#include "transparency.h"\n#include "texture_gl.h"')
+    renderer=renderer.replace('    /* Reset state */','    port_capture_samples=0;\n    /* Reset state */')
+    renderer=renderer.replace('        const PVR2TriList *list = pvr2_ta_get_list(draw_order[i]);','        if(!(port_render_passes&(1u<<i)))continue;\n        const PVR2TriList *list = pvr2_ta_get_list(draw_order[i]);')
     renderer=renderer.replace('        /* Upload vertex data */', '        if(draw_order[i]==PVR2_LIST_TRANS && !(dc_hw_read32(sh4_get_hardware(),0x005f8098)&1))port_sort_transparent(list);\n        /* Upload vertex data */')
     renderer=renderer.replace('#include "transparency.h"', '#include "platform/platform.h"\n#include "transparency.h"')
     renderer=renderer.replace('    port_begin_textures();', '    uint64_t port_render_started=platform_get_ticks_us();\n    port_begin_textures();')

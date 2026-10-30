@@ -50,6 +50,14 @@ int main(void) {
     ram[0]=1;palette[1]=0xff123456;port_begin_textures();port_texture(6u<<27,0);assert(uploads==4 && port_texels[0]==0x12);
     memset(ram,0,sizeof ram);ram[48]=0;ram[49]=0xf8;port_begin_textures();port_texture((1u<<31)|(1u<<27),0);assert(port_texels[0]==255 && port_texels[1]==0);
     memset(ram,0,sizeof ram);ram[24]=1;palette[0]=0;palette[1]=0xff123456;port_begin_textures();port_texture((1u<<31)|(6u<<27),0);assert(port_texels[0]==0x12 && port_texels[3]==255);
+    // Texture addresses mirror in 8 MiB VRAM, including source-cache reads.
+    memset(ram,0,sizeof ram);ram[0]=0;ram[1]=0xf8;port_begin_textures();
+    port_texture((1u<<27)|(1u<<26)|0x100000,0);assert(port_texels[0]==255 && port_texels[1]==0);
+    port_begin_textures();int mirrored_uploads=uploads;port_texture((1u<<27)|(1u<<26)|0x100000,0);assert(uploads==mirrored_uploads);
+    ram[0x7ffff8]=0;ram[0x7ffff9]=0xf8;ram[0]=0xe0;ram[1]=7;
+    port_begin_textures();port_texture((1u<<27)|(1u<<26)|0xfffff,0);assert(port_texels[0]==255 && port_texels[16]==0 && port_texels[17]==255);
+    int wrapped_uploads=uploads;port_begin_textures();port_texture((1u<<27)|(1u<<26)|0xfffff,0);assert(uploads==wrapped_uploads);
+    ram[0]=0;ram[1]=0xf8;port_begin_textures();port_texture((1u<<27)|(1u<<26)|0xfffff,0);assert(uploads==wrapped_uploads+1 && port_texels[16]==255 && port_texels[17]==0);
     // A scene with more than 128 textures must retain its working set.
     port_begin_textures();
     for(unsigned i=0;i<200;i++)port_texture((1u<<27)|(1u<<26)|i*16,0);

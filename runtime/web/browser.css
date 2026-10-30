@@ -17,3 +17,5 @@
 .face-buttons{position:absolute;right:4%;bottom:7%;width:24%;height:32%}.face-buttons .face{width:33%;height:33%;border-radius:50%;font-weight:800}.face-buttons .y{left:33%;top:0;color:#7af5bc!important}.face-buttons .x{left:0;top:33%;color:#ffe070!important}.face-buttons .b{right:0;top:33%;color:#79adff!important}.face-buttons .a{left:33%;bottom:0;color:#ff8585!important}
 #touch-pad .start-button{left:44%;bottom:5%;width:12%;height:8%;border-radius:20px;font-size:clamp(9px,1.6cqw,14px)}
 @media(max-width:600px){header{padding:14px 16px}main{margin:18px auto;padding:0 10px}h1{font-size:25px}.toolbar button{padding:11px 14px;font-size:13px}p{font-size:13px}.game-stage{width:100%}}
+
+#log{height:240px}details>label{display:block;margin:12px 0;color:#aab8ca}details input,details select,details textarea{font:14px system-ui;background:#162130;color:#e9f0fa;border:1px solid #44576c;border-radius:6px;padding:8px}details textarea{display:block;width:calc(100% - 18px);min-height:80px}details button{margin:4px 8px 12px 0}
