@@ -17,7 +17,7 @@ The port's game was in Drive, the reference in Reverse, both stationary. The
 port displayed a larger CSS canvas; compositor workloads were not identical.
 The two counters have different definitions and do not measure GPU completion.
 
-The port still draws white city scenery. Material diagnostics include many
+At the time of this measurement, the port drew white city scenery. Material diagnostics include many
 8 x 8 white-texture materials; capturing nonwhite texture data elsewhere in VRAM
 does not prove that each city surface has its correct material. The blending
 change alone did not resolve this. The reference correctly textures the scene.
@@ -46,3 +46,7 @@ For repeat measurements: warm the same scene, pause competing runtimes, restore
 Normal rendering, run the 30-second counter, export diagnostics and retain the
 build hash, browser/host, scene, audio mode and reference repairs. Repeat runs
 and moving-camera scenarios are needed before making performance claims.
+
+The later [Holly revision correction](white-scenery-2026-10-30.md) restores the
+city textures. These measurements predate that fix and were not repeated with
+the restored scenery.

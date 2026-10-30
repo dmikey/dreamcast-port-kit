@@ -38,7 +38,7 @@ document.querySelector('#start').addEventListener('click',()=>{
  if(typeof fetch==='function')fetch('build.json').then(response=>response.json()).then(info=>{buildInfo=info;}).catch(()=>{});
  document.querySelector('#start').disabled=true;status.textContent='Loading worker runtime…';reportStartup('Starting worker runtime');
  try{
-  workerRuntime=new PortWorkerRuntime(Module.canvas,{ready:()=>Module.onRuntimeInitialized(),log:output,audio:Module.portAudioPush,frame:saveFrame,vram:bytes=>saveDownload(bytes,'application/octet-stream','dreamcast-vram.bin'),benchmark:result=>{measurements.push(result);output('[BENCHMARK] '+JSON.stringify(result));},error:startupFailure});
+  workerRuntime=new PortWorkerRuntime(Module.canvas,{ready:()=>Module.onRuntimeInitialized(),log:output,audio:Module.portAudioPush,frame:saveFrame,snapshot:bytes=>saveDownload(bytes,'application/octet-stream','dreamcast-render-snapshot.bin'),vram:bytes=>saveDownload(bytes,'application/octet-stream','dreamcast-vram.bin'),benchmark:result=>{measurements.push(result);output('[BENCHMARK] '+JSON.stringify(result));},error:startupFailure});
   Module._port_button=(bit,pressed)=>workerRuntime.button(bit,pressed);
   Module._port_axes=(left,right,x,y)=>workerRuntime.axes(left,right,x,y);
   Module._port_render_capture=()=>workerRuntime.capture();
@@ -135,3 +135,5 @@ document.querySelector('#render-mode')?.addEventListener('change',event=>workerR
 
 let gamePaused=false;
 document.querySelector('#pause-game')?.addEventListener('click',event=>{gamePaused=!gamePaused;workerRuntime?.pause(gamePaused);lastProgress=performance.now();freezeReported=false;event.currentTarget.textContent=gamePaused?'Resume':'Pause';if(typeof portAudio!=='undefined'&&portAudio.context){const action=gamePaused?'suspend':'resume';portAudio.context[action]?.().catch(error=>output('[AUDIO] '+error.message));}});
+
+document.querySelector('#capture-snapshot')?.addEventListener('click',()=>workerRuntime?.snapshot());

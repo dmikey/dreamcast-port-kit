@@ -341,3 +341,22 @@ is in progress. Older content-addressed files remain for active pages.
 
 See [the local comparison record](validation/browser-comparison-2026-10-30.md)
 for the measured gameplay scene and limitations.
+
+## White scenery correction
+
+The Dreamcast system-bus revision register, `SB_SBREV` at `0x005F689C`, now
+returns the read-only value `0x0B`. Returning zero made the game graphics driver
+select a reduced hardware capability set and exhaust one texture-memory bank.
+The game then substituted its white dummy texture for city materials. This is
+a shared hardware-register fix, with no title-address patch or replacement art.
+
+The road, pavement, walls, trees and buildings were verified in browser Arcade
+driving after the correction. Captured allocation failures fell from 320 to zero
+in the compared local states. See [the validation record](validation/white-scenery-2026-10-30.md).
+Other rendering effects remain incomplete; this does not establish full hardware
+accuracy or change the earlier benchmark into an equivalent-performance claim.
+
+Runtime output also offers an explicit one-frame render snapshot: a binary file
+with a length-prefixed JSON layout followed by main RAM, VRAM and geometry lists.
+It captures diagnostic state only on request and is not a restorable save state.
+Keep captures local because they contain disc-derived game data.

@@ -5,12 +5,13 @@
     "sh4-delay-slots.patch",
     "sh4-irq-state.patch",
     "gdrom-fad.patch",
-    "maple-controller.patch"
+    "maple-controller.patch",
+    "holly-revision.patch"
   ],
   "patchedSourceSHA256": {
     "tools/static_recompile.py": "eef03fc1019ff47ad70d5322a860fd7816a1f73f8e980160163af9601dd24a6f",
     "src/recompiler/sh4_cpu.c": "b58e9afdc4740b2348ea7ddbda6d5782bed99b6385046aa9493a731cc4037aab",
     "src/hal/dc_bios.c": "2a406a32669f0ec9fb4c81c2c2f2fab33f035b544326da186823ae984fb48abf",
-    "src/hal/dc_hardware.c": "d4331a209250b497d057aadec894bad540307d1838d83643ca69ef277200210a"
+    "src/hal/dc_hardware.c": "8310452982ff904ad09abfa072715aa5b2d8b055b90f4f892e635d6e6288690e"
   }
 }

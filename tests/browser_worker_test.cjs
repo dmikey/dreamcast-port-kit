@@ -29,6 +29,9 @@ assert.equal(timers.size,1);const release=timers.values().next().value;timers.cl
 self.onmessage({data:{kind:'pulse',values:[2,0,255,0,0],duration:30000}});self.onmessage({data:{kind:'input',values:[4,0,0,0,0]}});assert.equal(timers.size,0);assert.deepEqual(input.at(-1),[4,0,0,0,0]);
 const count=input.length;self.onmessage({data:{kind:'pulse',values:[8,0,0,0,0],duration:60001}});assert.equal(input.length,count);
 let captured=0;worker.Module._port_frame_capture=()=>captured++;self.onmessage({data:{kind:'capture-frame'}});assert.equal(captured,1);
+worker.Module._port_render_snapshot=()=>captured++;self.onmessage({data:{kind:'capture-snapshot'}});assert.equal(captured,2);
+runtime.snapshot();assert.equal(messages[0].sent.at(-1).message.kind,'capture-snapshot');
+let snapshotBytes;runtime.callbacks.snapshot=bytes=>snapshotBytes=bytes;const snapshot=new ArrayBuffer(8);messages[0].onmessage({data:{kind:'snapshot',bytes:snapshot}});assert.equal(snapshotBytes,snapshot);
 self.onmessage({data:{kind:'replay',steps:[{atMs:0,values:[8,0,0,0,0]},{atMs:1000,values:[0,0,0,0,0]}]}});assert.equal(timers.size,3);timers.values().next().value();assert.deepEqual(input.at(-1),[8,0,0,0,0]);
 self.onmessage({data:{kind:'input',values:[2,0,0,0,0]}});assert.equal(timers.size,0,'manual input cancels replay');
 self.onmessage({data:{kind:'replay',steps:[{atMs:180001,values:[8,0,0,0,0]}]}});assert.equal(timers.size,0,'unbounded replays are rejected');

@@ -11,6 +11,7 @@ class PortWorkerRuntime {
    else if(data.kind==='logs'){for(const line of data.lines)this.callbacks.log(line);}
    else if(data.kind==='benchmark')this.callbacks.benchmark?.(data.result);
    else if(data.kind==='vram')this.callbacks.vram?.(data.bytes);
+   else if(data.kind==='snapshot')this.callbacks.snapshot?.(data.bytes);
    else if(data.kind==='frame')this.callbacks.frame?.(data.bytes);
    else if(data.kind==='audio')this.callbacks.audio(data.samples);
    else if(data.kind==='error')this.callbacks.error(data.message);
@@ -27,6 +28,7 @@ class PortWorkerRuntime {
  measure(){if(this.ready)this.worker.postMessage({kind:'benchmark'});}
  pulse(values,duration){if(this.ready)this.worker.postMessage({kind:'pulse',values,duration});}
  mode(value){if(this.ready)this.worker.postMessage({kind:'render-mode',value});}
+ snapshot(){if(this.ready)this.worker.postMessage({kind:'capture-snapshot'});}
  vram(){if(this.ready)this.worker.postMessage({kind:'capture-vram'});}
  frame(){if(this.ready)this.worker.postMessage({kind:'capture-frame'});}
  capture(){if(this.worker&&this.ready)this.worker.postMessage({kind:'capture-render'});}

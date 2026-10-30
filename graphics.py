@@ -57,11 +57,11 @@ def adapt(core,output,include,renderer):
             }
             port_draw_materials(list,draw_order[i]);
         }''')
-    renderer=renderer.replace('#include "texture_gl.h"', '#include "transparency.h"\n#include "texture_gl.h"')
+    renderer=renderer.replace('#include "texture_gl.h"', '#include "transparency.h"\n#include "texture_gl.h"\n#include "render_snapshot.h"')
     renderer=renderer.replace('    /* Reset state */','    port_capture_samples=0;\n    /* Reset state */')
     renderer=renderer.replace('        const PVR2TriList *list = pvr2_ta_get_list(draw_order[i]);','        if(!(port_render_passes&(1u<<i)))continue;\n        const PVR2TriList *list = pvr2_ta_get_list(draw_order[i]);')
     renderer=renderer.replace('        /* Upload vertex data */', '        if(draw_order[i]==PVR2_LIST_TRANS && !(dc_hw_read32(sh4_get_hardware(),0x005f8098)&1))port_sort_transparent(list);\n        /* Upload vertex data */')
     renderer=renderer.replace('#include "transparency.h"', '#include "platform/platform.h"\n#include "transparency.h"')
-    renderer=renderer.replace('    port_begin_textures();', '    uint64_t port_render_started=platform_get_ticks_us();\n    port_begin_textures();')
+    renderer=renderer.replace('    port_begin_textures();', '    uint64_t port_render_started=platform_get_ticks_us();\n    port_begin_textures();\n    port_capture_snapshot();')
     renderer=renderer.replace('    glUseProgram(0);\n}', '    glUseProgram(0);\n    static uint64_t total_us,max_us,reported,uploads;static unsigned frames;\n    uint64_t now=platform_get_ticks_us(),elapsed=now-port_render_started;\n    total_us+=elapsed;if(elapsed>max_us)max_us=elapsed;frames++;\n    if(now-reported>=5000000){printf("[RENDER] frames=%u submit_avg_us=%llu submit_max_us=%llu window_us=%llu tex_uploads=%llu tex_gpu_bytes=%u\\n",frames,(unsigned long long)(total_us/frames),(unsigned long long)max_us,(unsigned long long)(now-reported),(unsigned long long)(port_texture_uploads-uploads),port_texture_gpu_bytes);uploads=port_texture_uploads;reported=now;total_us=max_us=0;frames=0;}\n}')
     return renderer

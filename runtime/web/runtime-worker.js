@@ -41,6 +41,7 @@ self.onmessage=event=>{
   endPulse();const v=data.values;lastInput=[v[0]&0xffff,Math.max(0,Math.min(255,v[1]|0)),Math.max(0,Math.min(255,v[2]|0)),Math.max(-128,Math.min(127,v[3]|0)),Math.max(-128,Math.min(127,v[4]|0))];applyInput();
   log('[INPUT-REPLAY] hold '+lastInput.join(',')+' for '+data.duration+'ms');pulseTimer=setTimeout(()=>{pulseTimer=null;lastInput=[0,0,0,0,0];applyInput();log('[INPUT-REPLAY] released');},data.duration);
  }else if(data.kind==='render-mode'&&ready&&Module._port_render_mode&&Number.isInteger(data.value))Module._port_render_mode(data.value&15);
+ else if(data.kind==='capture-snapshot'&&ready&&Module._port_render_snapshot)Module._port_render_snapshot();
  else if(data.kind==='capture-vram'&&ready&&Module._port_vram_capture)Module._port_vram_capture();
  else if(data.kind==='capture-frame'&&ready&&Module._port_frame_capture)Module._port_frame_capture();
  else if(data.kind==='input'){
