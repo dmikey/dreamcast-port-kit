@@ -19,7 +19,7 @@ function output(...parts){
  if(!text.startsWith('[STARTUP]')&&(/\[PVR2\] Shader (compile|link) error/.test(text)||/\[PLATFORM\].*failed:/.test(text)))startupFailure(text);
 }
 setInterval(()=>{flushLog();if(runtimeReady&&lastProgress&&!freezeReported&&performance.now()-lastProgress>4000){freezeReported=true;output('[WATCHDOG] No execution progress for 4 seconds.');}},250);
-let runtimeReady=false;
+let runtimeReady=false,buildInfo=null;
 function reportStartup(reason){
  if(typeof fetch!=='function')return;
  const payload={schemaVersion:1,reason:String(reason).slice(0,1000),userAgent:navigator.userAgent||'',runtimeReady,events:diagnostics.snapshot().slice(-40).map(e=>({kind:e.kind,message:e.message.slice(0,1000)}))};
@@ -30,10 +30,12 @@ var Module={onRuntimeInitialized:()=>{runtimeReady=true;reportStartup('Runtime i
 Module.onAbort=reason=>startupFailure(String(reason));
 Module.onExit=code=>{if(code)startupFailure('Runtime exited with code '+code+'. Expand Runtime output for details.');};
 Module.portAudioPush=samples=>{if(typeof portAudio!=='undefined')portAudio.push(samples);};
+Module.portBrowserYield=()=>typeof portBrowserScheduler!=='undefined'?portBrowserScheduler.yield():new Promise(resolve=>setTimeout(resolve,0));
 document.querySelector('#start').addEventListener('click',()=>{
  if(typeof WebAssembly==='undefined'){startupFailure('This browser does not provide WebAssembly.');return;}
  if(typeof WebGL2RenderingContext==='undefined'){startupFailure('WebGL 2 is unavailable. Check Safari’s graphics settings.');return;}
  if(typeof portAudio!=='undefined')portAudio.start().catch(error=>{output('[AUDIO] '+error.message);reportStartup('Audio: '+error.message);});
+ if(typeof fetch==='function')fetch('build.json').then(response=>response.json()).then(info=>{buildInfo=info;}).catch(()=>{});
  document.querySelector('#start').disabled=true;status.textContent='Loading browser runtime…';reportStartup('Starting runtime');const script=document.createElement('script');script.src='game.js';script.addEventListener('error',()=>startupFailure('The game runtime script could not load.'));document.body.append(script);Module.canvas.focus();
 });
 
@@ -109,7 +111,7 @@ document.querySelector('#capture-render').addEventListener('click',()=>{if(runti
 
 document.querySelector('details').addEventListener('toggle',flushLog);
 document.querySelector('#download-diagnostics').addEventListener('click',()=>{
- const report={schemaVersion:1,source:'dreamcast-port-kit browser runtime',status:status.textContent,eventsDropped:diagnostics.dropped,events:diagnostics.snapshot(),audioOutputImplemented:true,audio:typeof portAudio==='undefined'?null:{...portAudio.stats,received:portAudio.received,nonzeroReceived:portAudio.nonzero,contextState:portAudio.context?.state,muted:portAudio.muted}};
+ const report={schemaVersion:1,source:'dreamcast-port-kit browser runtime',userAgent:navigator.userAgent||'',build:buildInfo,status:status.textContent,eventsDropped:diagnostics.dropped,events:diagnostics.snapshot(),audioOutputImplemented:true,audio:typeof portAudio==='undefined'?null:{...portAudio.stats,received:portAudio.received,nonzeroReceived:portAudio.nonzero,contextState:portAudio.context?.state,muted:portAudio.muted}};
  const url=URL.createObjectURL(new Blob([JSON.stringify(report,null,2)],{type:'application/json'}));
  const link=document.createElement('a');link.href=url;link.download='dreamcast-diagnostics.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 });

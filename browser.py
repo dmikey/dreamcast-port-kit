@@ -67,8 +67,8 @@ def build(args,kit,error,verify,write_json):
     bios=bios.replace('            if (fseek(g_tracks[t].f, off, SEEK_SET) == 0)\n                fread(sector, 1, GDC_RAW_SECTOR, g_tracks[t].f);','            port_disc_read(t,off,sector);')
     (output/'bios.c').write_text(bios)
     cpu=(local/'cpu.c').read_text()
-    cpu='#include <emscripten.h>\n#include "browser_clock.h"\n'+cpu
-    cpu=cpu.replace('void sh4_poll_irq(SH4CPU *cpu) {', 'void sh4_poll_irq(SH4CPU *cpu) {\n    static double yielded,waited,reported;static unsigned yields;double now=emscripten_get_now();if(now-yielded>8){double before=now;emscripten_sleep(0);yielded=emscripten_get_now();waited+=yielded-before;yields++;if(yielded-reported>5000){printf("[PERF] %u CPU yields, %.0fms waiting / %.0fms elapsed\\n",yields,waited,yielded-reported);reported=yielded;waited=0;yields=0;}}')
+    cpu='#include <emscripten.h>\n#include "browser_clock.h"\n#include "browser_yield.h"\n'+cpu
+    cpu=cpu.replace('void sh4_poll_irq(SH4CPU *cpu) {', 'void sh4_poll_irq(SH4CPU *cpu) {\n    static double yielded,waited,reported;static unsigned yields;double now=emscripten_get_now();if(now-yielded>8){double before=now;port_browser_yield();yielded=emscripten_get_now();waited+=yielded-before;yields++;if(yielded-reported>5000){printf("[PERF] %u CPU yields, %.0fms waiting / %.0fms elapsed\\n",yields,waited,yielded-reported);reported=yielded;waited=0;yields=0;}}')
     # Browser disc reads already take wall time. Virtual-drive credit must not
     # deliver queued VBlanks in a burst and advance the gameplay timer.
     cpu=cpu.replace('void sh4_credit_elapsed_ms(uint32_t ms) {', 'void sh4_credit_elapsed_ms(uint32_t ms) {(void)ms;return;')
@@ -97,6 +97,6 @@ def build(args,kit,error,verify,write_json):
     result=subprocess.run([sys.executable,str(emcc),*map(str,compiled),'-O2','-g2','-sUSE_SDL=2','-sMIN_WEBGL_VERSION=2','-sMAX_WEBGL_VERSION=2','-sASYNCIFY=1','-sASYNCIFY_STACK_SIZE=4194304','-sSTACK_SIZE=16777216','-sINITIAL_MEMORY=134217728','-sALLOW_MEMORY_GROWTH=1','-sMAXIMUM_MEMORY=1073741824','-sASSERTIONS=1','--embed-file',str(exe)+'@/game.bin','-o',str(output/'game.js')],capture_output=True,text=True)
     (output/'link.log').write_text(result.stdout+result.stderr)
     if result.returncode:raise error('WebAssembly link: '+result.stderr[-2500:])
-    for name in ('index.html','browser.js','browser.css','audio.js','audio-worklet.js'):shutil.copyfile(kit/'runtime/web'/name,output/name)
-    write_json(output/'build.json',{'target':'browser-webgl2','playable':False,'sourceSetSHA256':json.loads((project/'port.json').read_text())['sourceSetSHA256'],'wasmSHA256':hashlib.sha256((output/'game.wasm').read_bytes()).hexdigest()})
+    for name in ('index.html','browser.js','browser.css','browser-scheduler.js','audio.js','audio-worklet.js'):shutil.copyfile(kit/'runtime/web'/name,output/name)
+    write_json(output/'build.json',{'target':'browser-webgl2','playable':False,'abiChecks':bool(args.abi),'scheduler':'message-channel-8ms','sourceSetSHA256':json.loads((project/'port.json').read_text())['sourceSetSHA256'],'wasmSHA256':hashlib.sha256((output/'game.wasm').read_bytes()).hexdigest()})
     print('Browser build ready. Run serve-browser; gameplay remains unverified.')

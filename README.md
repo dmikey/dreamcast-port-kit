@@ -243,7 +243,7 @@ startup status paragraph. Fatal diagnostics remain available in Runtime output.
 
 ## Safari startup diagnostics
 
-Mac Safari compatibility is still unverified. Startup checks report missing
+A local Mac Safari user confirmed graphics and audio output. Menu speed remains under investigation. Startup checks report missing
 WebAssembly/WebGL 2, script-load errors, WASM aborts and shader failures in a
 visible error banner. Ordinary startup text stays hidden. The loopback dev
 server accepts a bounded same-origin diagnostic POST and stores one local
@@ -255,3 +255,22 @@ separate Web Audio path owns sound; an audio initialization failure does not
 prevent loading the game.
 
 `node tests/browser_startup_test.cjs` checks the startup/error contract.
+
+## Active-tab scheduling and performance builds
+
+Browser CPU execution yields after roughly eight milliseconds of work through
+MessageChannel tasks. This avoids chained zero-delay timers consuming a large
+part of active Safari execution time. Hidden tabs and browsers without
+MessageChannel retain timer yielding. The task grants an event-loop opportunity;
+it does not advance guest time. VBlank deadlines and the audio source clock stay
+independent. `node tests/browser_scheduler_test.cjs` checks asynchronous FIFO
+completion, channel reuse and fallbacks.
+
+Use a normal `build-browser` for playback. Add `--abi` only while investigating
+register/stack corruption. The build receipt and diagnostic export now identify
+the ABI mode and scheduler so performance reports can be tied to a specific
+build. A user-supplied Mac Safari report confirmed working audio/graphics but
+about 19 FPS and approximately 2.1 seconds of timer wait per 5-second window.
+The user subsequently confirmed the updated build works. A local Chromium
+check measured about 50–70 ms of yield waiting per five-second window; that
+number is not a new Safari FPS measurement.
