@@ -39,6 +39,9 @@ int main(void) {
     port_begin_textures();port_texture((1u<<27)|(1u<<26),0);
     assert(port_texels[0]==255 && port_texels[1]==0 && port_texels[2]==0 && port_texels[3]==255);
     port_begin_textures();port_texture((1u<<27)|(1u<<26),0);assert(uploads==1);
+    port_texture((1u<<27)|(1u<<26),(5u<<26)|(3u<<6)|(1u<<19)|(1u<<20));assert(uploads==1);
+    for(unsigned x=0;x<1024;x++){unsigned expected=0;for(unsigned bit=0;bit<10;bit++)expected|=((x>>bit)&1)<<(bit*2);assert(port_spread(x)==expected);}
+
     memset(ram,0,sizeof ram);palette[0]=0xff12ab34;port_begin_textures();
     port_texture(6u<<27,0);
     assert(port_texels[0]==0x12 && port_texels[1]==0xab && port_texels[2]==0x34 && port_texels[3]==255);
@@ -47,6 +50,15 @@ int main(void) {
     ram[0]=1;palette[1]=0xff123456;port_begin_textures();port_texture(6u<<27,0);assert(uploads==4 && port_texels[0]==0x12);
     memset(ram,0,sizeof ram);ram[48]=0;ram[49]=0xf8;port_begin_textures();port_texture((1u<<31)|(1u<<27),0);assert(port_texels[0]==255 && port_texels[1]==0);
     memset(ram,0,sizeof ram);ram[24]=1;palette[0]=0;palette[1]=0xff123456;port_begin_textures();port_texture((1u<<31)|(6u<<27),0);assert(port_texels[0]==0x12 && port_texels[3]==255);
+    // A scene with more than 128 textures must retain its working set.
+    port_begin_textures();
+    for(unsigned i=0;i<200;i++)port_texture((1u<<27)|(1u<<26)|i*16,0);
+    int before=uploads;port_begin_textures();
+    for(unsigned i=0;i<200;i++)port_texture((1u<<27)|(1u<<26)|i*16,0);
+    assert(uploads==before);
+    // Compressed 1024-square textures force GPU-budget eviction, not growth.
+    for(unsigned i=0;i<20;i++){port_begin_textures();port_texture((1u<<30)|(1u<<27)|i*32768,63);assert(port_texture_gpu_bytes<=PORT_TEXTURE_GPU_BUDGET && port_texture_source_bytes<=PORT_TEXTURE_SOURCE_BUDGET);}
+    assert(port_texture_gpu_bytes<=64u*1024*1024);
     return 0;
 }
 '''

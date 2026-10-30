@@ -8,7 +8,7 @@
 .game-stage{position:relative;width:min(100%,800px);margin-inline:auto;user-select:none;-webkit-user-select:none}canvas{width:100%;box-sizing:border-box}
 #touch-pad{position:absolute;inset:0;pointer-events:none;container-type:inline-size}
 #touch-pad[hidden]{display:none}#touch-pad button,#stick{pointer-events:auto;touch-action:none;-webkit-tap-highlight-color:transparent}
-#touch-pad button{position:absolute;margin:0;padding:0;border:1px solid #d1e2f09c;background:#14233365;color:#fff;box-shadow:0 2px 8px #0005;text-shadow:0 1px 3px #000;font-size:clamp(12px,3cqw,24px);backdrop-filter:blur(2px)}
+#touch-pad button{position:absolute;margin:0;padding:0;border:1px solid #d1e2f09c;background:#14233365;color:#fff;box-shadow:0 2px 8px #0005;text-shadow:0 1px 3px #000;font-size:clamp(12px,3cqw,24px)}
 #touch-pad button[aria-pressed="true"]{background:#c7edff9c;border-color:#fff;color:#071420}
 .trigger{top:4%;width:23%;height:11%;border-radius:22px!important}.trigger small{display:block;font:600 clamp(7px,1.2cqw,10px) system-ui;letter-spacing:.08em}.trigger-l{left:4%}.trigger-r{right:4%}
 #stick{position:absolute;left:5%;bottom:33%;width:18%;aspect-ratio:1;border:2px solid #d1e2f07a;border-radius:50%;background:#14233350;box-shadow:inset 0 0 16px #0005}

@@ -19,7 +19,7 @@ function output(...parts){
  if(!text.startsWith('[STARTUP]')&&(/\[PVR2\] Shader (compile|link) error/.test(text)||/\[PLATFORM\].*failed:/.test(text)))startupFailure(text);
 }
 setInterval(()=>{flushLog();if(runtimeReady&&lastProgress&&!freezeReported&&performance.now()-lastProgress>4000){freezeReported=true;output('[WATCHDOG] No execution progress for 4 seconds.');}},250);
-let runtimeReady=false,buildInfo=null;
+let runtimeReady=false,buildInfo=null,workerRuntime=null;
 function reportStartup(reason){
  if(typeof fetch!=='function')return;
  const payload={schemaVersion:1,reason:String(reason).slice(0,1000),userAgent:navigator.userAgent||'',runtimeReady,events:diagnostics.snapshot().slice(-40).map(e=>({kind:e.kind,message:e.message.slice(0,1000)}))};
@@ -33,10 +33,17 @@ Module.portAudioPush=samples=>{if(typeof portAudio!=='undefined')portAudio.push(
 Module.portBrowserYield=()=>typeof portBrowserScheduler!=='undefined'?portBrowserScheduler.yield():new Promise(resolve=>setTimeout(resolve,0));
 document.querySelector('#start').addEventListener('click',()=>{
  if(typeof WebAssembly==='undefined'){startupFailure('This browser does not provide WebAssembly.');return;}
- if(typeof WebGL2RenderingContext==='undefined'){startupFailure('WebGL 2 is unavailable. Check Safari’s graphics settings.');return;}
+ if(typeof Worker==='undefined'||typeof Module.canvas.transferControlToOffscreen!=='function'){startupFailure('Web Workers and WebGL OffscreenCanvas are required (Safari 17 or newer).');return;}
  if(typeof portAudio!=='undefined')portAudio.start().catch(error=>{output('[AUDIO] '+error.message);reportStartup('Audio: '+error.message);});
  if(typeof fetch==='function')fetch('build.json').then(response=>response.json()).then(info=>{buildInfo=info;}).catch(()=>{});
- document.querySelector('#start').disabled=true;status.textContent='Loading browser runtime…';reportStartup('Starting runtime');const script=document.createElement('script');script.src='game.js';script.addEventListener('error',()=>startupFailure('The game runtime script could not load.'));document.body.append(script);Module.canvas.focus();
+ document.querySelector('#start').disabled=true;status.textContent='Loading worker runtime…';reportStartup('Starting worker runtime');
+ try{
+  workerRuntime=new PortWorkerRuntime(Module.canvas,{ready:()=>Module.onRuntimeInitialized(),log:output,audio:Module.portAudioPush,error:startupFailure});
+  Module._port_button=(bit,pressed)=>workerRuntime.button(bit,pressed);
+  Module._port_axes=(left,right,x,y)=>workerRuntime.axes(left,right,x,y);
+  Module._port_render_capture=()=>workerRuntime.capture();
+  workerRuntime.start();Module.canvas.focus();
+ }catch(error){startupFailure(error.message||String(error));}
 });
 
 // One browser input owner combines keyboard, touch and the standard Gamepad API.
@@ -49,7 +56,7 @@ let stickX=0,stickY=0,stickPointer=null;
 const controllerStatus=document.querySelector('#controller');
 const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
 function stick(v){const n=Number.isFinite(v)?clamp(v,-1,1):0;return Math.abs(n)<.15?0:Math.sign(n)*(Math.abs(n)-.15)/.85;}
-function controllerFrame(){
+function pollController(){
  let bits=0,left=0,right=0,x=0,y=0;
  let pads=[];try{pads=navigator.getGamepads?Array.from(navigator.getGamepads()):[];}catch{}
  const pad=pads.find(p=>p&&p.connected&&p.mapping==='standard');
@@ -79,20 +86,20 @@ function controllerFrame(){
   const signature=[bits,left,right,x,y].join(',');
   if(signature!==lastInput){lastInput=signature;document.querySelector('#canvas').dataset.input=signature;}
  }
- requestAnimationFrame(controllerFrame);
 }
-function release(){resetStick();inputActive=false;keys.clear();touch.clear();for(const b of document.querySelectorAll('[aria-pressed]'))b.setAttribute('aria-pressed','false');if(runtimeReady&&Module._port_axes){Module._port_axes(0,0,0,0);for(const bit of gameBits)Module._port_button(bit,0);}}
-window.addEventListener('keydown',event=>{if(keyButtons[event.code]||['KeyQ','KeyW'].includes(event.code)){event.preventDefault();inputActive=true;keys.add(event.code);}});
-window.addEventListener('keyup',event=>keys.delete(event.code));
+function controllerFrame(){pollController();requestAnimationFrame(controllerFrame);}
+function release(){resetStick();inputActive=false;keys.clear();touch.clear();for(const b of document.querySelectorAll('[aria-pressed]'))b.setAttribute('aria-pressed','false');if(runtimeReady&&Module._port_axes){for(const bit of gameBits)Module._port_button(bit,0);Module._port_axes(0,0,0,0);}}
+window.addEventListener('keydown',event=>{if(keyButtons[event.code]||['KeyQ','KeyW'].includes(event.code)){event.preventDefault();inputActive=true;keys.add(event.code);pollController();}});
+window.addEventListener('keyup',event=>{keys.delete(event.code);pollController();});
 window.addEventListener('blur',release);window.addEventListener('focus',()=>inputActive=true);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)release();else inputActive=document.hasFocus();});
 for(const button of document.querySelectorAll('[data-bit],[data-axis]')){
  button.setAttribute('aria-pressed','false');
- const up=()=>{touch.delete(button);button.setAttribute('aria-pressed','false');};
- button.addEventListener('pointerdown',event=>{event.preventDefault();inputActive=true;button.setPointerCapture(event.pointerId);touch.add(button);button.setAttribute('aria-pressed','true');});
+ const up=()=>{touch.delete(button);button.setAttribute('aria-pressed','false');pollController();};
+ button.addEventListener('pointerdown',event=>{event.preventDefault();inputActive=true;button.setPointerCapture(event.pointerId);touch.add(button);button.setAttribute('aria-pressed','true');pollController();});
  for(const name of ['pointerup','pointercancel','lostpointercapture'])button.addEventListener(name,up);
  // Keyboard/assistive clicks have no pointer hold; give them a short press.
- button.addEventListener('click',event=>{if(!touch.has(button)){inputActive=true;touch.add(button);button.setAttribute('aria-pressed','true');setTimeout(up,200);}});
+ button.addEventListener('click',event=>{if(!touch.has(button)){inputActive=true;touch.add(button);button.setAttribute('aria-pressed','true');pollController();setTimeout(up,200);}});
 }
 requestAnimationFrame(controllerFrame);
 
@@ -111,7 +118,7 @@ document.querySelector('#capture-render').addEventListener('click',()=>{if(runti
 
 document.querySelector('details').addEventListener('toggle',flushLog);
 document.querySelector('#download-diagnostics').addEventListener('click',()=>{
- const report={schemaVersion:1,source:'dreamcast-port-kit browser runtime',userAgent:navigator.userAgent||'',build:buildInfo,status:status.textContent,eventsDropped:diagnostics.dropped,events:diagnostics.snapshot(),audioOutputImplemented:true,audio:typeof portAudio==='undefined'?null:{...portAudio.stats,received:portAudio.received,nonzeroReceived:portAudio.nonzero,contextState:portAudio.context?.state,muted:portAudio.muted}};
+ const report={schemaVersion:1,source:'dreamcast-port-kit browser runtime',userAgent:navigator.userAgent||'',build:buildInfo,execution:workerRuntime?'dedicated-worker':'not-started',status:status.textContent,input:{requested:Module.canvas.dataset.input,appliedButtons:Module.canvas.dataset.inputApplied,lastPressed:Module.canvas.dataset.lastPressed},eventsDropped:diagnostics.dropped,events:diagnostics.snapshot(),audioOutputImplemented:true,audio:typeof portAudio==='undefined'?null:{...portAudio.stats,received:portAudio.received,nonzeroReceived:portAudio.nonzero,contextState:portAudio.context?.state,muted:portAudio.muted}};
  const url=URL.createObjectURL(new Blob([JSON.stringify(report,null,2)],{type:'application/json'}));
  const link=document.createElement('a');link.href=url;link.download='dreamcast-diagnostics.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 });

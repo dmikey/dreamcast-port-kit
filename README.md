@@ -55,10 +55,35 @@ python3 serve_browser.py --project ports/my-game --port 4390
 ```
 
 Open `http://127.0.0.1:4390/` and choose Start game. The same translated title
-code runs as WebAssembly, with WebGL2 graphics, SDL keyboard input and same-origin
-bounded disc chunks. Only the executable is embedded; the full disc is not a
+code runs as WebAssembly in a dedicated Web Worker. That worker owns the SH-4
+execution, ARM7 interpreter, hardware, texture decoding and WebGL2 rendering on a
+transferred OffscreenCanvas. The page owns keyboard, Gamepad and touch input, DOM
+controls, and forwarding audio blocks to the AudioWorklet. The browser target
+does not use SDL or proxy graphics calls through the page. Disc chunks stay
+bounded and same-origin. Only the executable is embedded; the full disc is not a
 startup download. The server binds to loopback. Keep disc-derived browser
 artifacts private. This is local browser bring-up, not a published game.
+
+The worker build requires Web Workers, WebAssembly and WebGL2 on OffscreenCanvas
+(Safari 17 or newer, with actual browser verification still required). It does
+not require SharedArrayBuffer or cross-origin isolation. Input changes are
+batched and deduplicated; stereo audio buffers transfer ownership to the page.
+CPU execution yields to worker messages roughly every 8 ms. Moving this work
+off the page keeps browser controls responsive; it does not guarantee a higher
+guest frame rate or correct remaining texture defects.
+
+Browser builds default to `-O2`. Add `--optimize` to test `-O3` with cached
+ThinLTO across files; the flag is experimental until matched gameplay shows an
+advantage. It can increase final WASM size and browser compilation time. `--abi`
+keeps the `-O2` diagnostic build with runtime assertions. Render timing reports CPU-side
+submission time every five seconds, including texture work and transparent
+sorting. It is not a GPU completion measurement. Compare identical game scenes
+on the same browser/device with sound and resolution held constant before
+claiming an advantage over another runtime. The historical `[FRAME]` fps value
+is cumulative from boot and should not be used as a steady gameplay benchmark.
+Export diagnostics and run `python3 benchmark.py before.json after.json` for
+windowed submission timings, frame event intervals and audio health. Compare
+matching gameplay scenes; static menus can legitimately submit fewer frames.
 
 `control_flow.py` lowers terminal cross-function jumps to a bounded-stack
 trampoline. Normal calls retain their continuations. Its hash and the generated
@@ -67,7 +92,10 @@ source hashes are recorded at translation. The synthetic regression executes
 
 `graphics.py` and `runtime/texture_gl.h` preserve material state and decode
 16-bit direct-color, VQ and palette textures from live VRAM. Cached textures
-are reused only while their exact source bytes and palette remain unchanged. Unsupported texture
+are reused only while their exact source bytes and palette remain unchanged.
+The cache holds up to 512 entries with true least-recently-used eviction, a
+64 MiB GPU image budget and a 16 MiB source-byte budget. Blend and color flags
+do not duplicate identical texture images. Unsupported texture
 formats show a diagnostic magenta texture; modifier volumes and full hardware
 render fidelity remain unfinished. Native `build --graphics` is an optional
 SDL2/OpenGL diagnostic; the product target is the browser.
@@ -186,15 +214,31 @@ padding. This is a shared TA fix, not a Crazy Taxi asset replacement.
 
 ## Flycast WASM reference adaptation
 
-The [nasomers/flycast-wasm technical write-up](https://github.com/nasomers/flycast-wasm/blob/main/TECHNICAL_WRITEUP.md), [validator backend](https://github.com/nasomers/flycast-wasm/blob/main/patches/rec_wasm.cpp), [instrumentation](https://github.com/nasomers/flycast-wasm/blob/main/patches/fly_instrument.h), and [emitter](https://github.com/nasomers/flycast-wasm/blob/main/patches/wasm_emit.h) inform this work. These are design references; its Flycast/SHIL JIT backend is not a drop-in replacement for the kit's ahead-of-time C translator. Performance figures in that project are not measurements of this kit.
+Upstream reviewed on 2026-10-30 at [`16e9c7b`](https://github.com/nasomers/flycast-wasm/tree/16e9c7b4b7065a4bd42e7490e8aab3e9283d5415).
+The repository identifies its license as GPLv2. Keep attribution and license
+notices with any source adapted from it.
+
+The [nasomers/flycast-wasm technical write-up](https://github.com/nasomers/flycast-wasm/blob/16e9c7b4b7065a4bd42e7490e8aab3e9283d5415/TECHNICAL_WRITEUP.md), [validator backend](https://github.com/nasomers/flycast-wasm/blob/16e9c7b4b7065a4bd42e7490e8aab3e9283d5415/patches/rec_wasm.cpp), [instrumentation](https://github.com/nasomers/flycast-wasm/blob/16e9c7b4b7065a4bd42e7490e8aab3e9283d5415/patches/fly_instrument.h), and [emitter](https://github.com/nasomers/flycast-wasm/blob/16e9c7b4b7065a4bd42e7490e8aab3e9283d5415/patches/wasm_emit.h) inform this work. These are design references; its Flycast/SHIL JIT backend is not a drop-in replacement for the kit's ahead-of-time C translator. Performance figures in that project are not measurements of this kit.
 
 | Area | Current implementation | Remaining work |
 | --- | --- | --- |
 | Differential validation | Independent integer/control-flow subset oracle compares actual translated O2 C against synthetic RAM-only programs, including ordered writes. Initial run: 4,096 comparisons, zero differences. A corrupted candidate test confirms mismatch detection. | Full interpreter-backed title snapshots, FPU, PC/dispatch, interrupts, and hardware-aware isolation. The current oracle is not Flycast. |
 | Scheduling | Fractional 60 Hz wall-clock VBlank deadlines, no virtual-disc-time burst; bounded cooperative browser yields. | Guest-cycle accounting and a cycle-denominated debt budget. Current pacing is not cycle-accurate. |
-| Diagnostics | Fixed-capacity browser history, event categories, batched DOM updates, no normal console flood, progress watchdog, downloadable JSON, and targeted render samples. Overflow is explicit. | Structured core IRQ/cycle/DMA events and audio underrun events once audio exists. |
+| Diagnostics | Fixed-capacity browser history, event categories, batched DOM updates, no normal console flood, progress watchdog, downloadable JSON, and targeted render samples. Overflow is explicit. | Structured core IRQ/cycle/DMA events; audio queue/underrun counters are already exported. |
 | Audio | ARM7 driver plus 64-channel PCM16/PCM8/Yamaha ADPCM direct stereo mixer, pitch/loop/key control, amplitude envelopes, pan/master attenuation, and a bounded AudioWorklet queue with device-rate resampling. | DSP effects, filter/LFO modulation, CDDA, and hardware-accurate sample/CPU scheduling. Browser listening and underrun behavior must be verified per title. |
-| Optimization | Existing optimized C/WASM build and exact texture cache. | Validate guarded RAM access, register caching and block merging before enabling them. Include the real production memory path in comparisons. |
+| Optimization | Dedicated worker/OffscreenCanvas, cached ThinLTO, material-state caching, bounded LRU texture cache, and windowed render/texture telemetry. | Validate guarded RAM access, register caching and block merging before enabling them. Include the real production memory path in comparisons. |
+
+The next execution work references the emitter's register cache (flush dirty
+registers at calls/exits), guarded RAM loads with the original address preserved
+for slow paths, and the validator's production-write-path comparisons. These
+are not enabled merely because the upstream tests passed: our C translator has
+different CPU structures, address translation and interrupt polling. Our helpers
+share one WASM module, so upstream JIT import-crossing counts do not predict our
+costs. Measure helper density and validate the actual optimized path here.
+
+The production build script is another reference for separating diagnostic and
+release behavior. Guest-cycle debt and idle-loop handling still need their own
+implementation and validation; the current wall-clock pacing is not that code.
 
 Run the reproducible subset validation from the kit's parent directory:
 

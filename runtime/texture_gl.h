@@ -1,6 +1,6 @@
 /* Runtime texture decode for the existing PVR2 renderer: direct-color and VQ.
  * Texture pixels come from the game's current VRAM, not exported substitutes. */
-static unsigned port_spread(unsigned x) {unsigned v=0;for(unsigned b=0;b<10;b++)v|=((x>>b)&1)<<(b*2);return v;}
+static unsigned port_spread(unsigned x) {x&=0x3ff;x=(x|(x<<8))&0x00ff00ff;x=(x|(x<<4))&0x0f0f0f0f;x=(x|(x<<2))&0x33333333;return (x|(x<<1))&0x55555555;}
 static unsigned port_twiddle(unsigned x,unsigned y,unsigned w,unsigned h) {
     unsigned m=w<h?w:h;return (x/m+y/m)*m*m+(port_spread(x%m)<<1)+port_spread(y%m);
 }
@@ -9,8 +9,18 @@ static unsigned char port_texels[1024*1024*4];
 #include <string.h>
 static struct {
     GLuint id;uint32_t tcw,tsp,frame,palette[256];
+    uint64_t used;unsigned image_bytes;int valid;
     unsigned char *source;unsigned length,palette_format;
-} port_cache[128];
+} port_cache[512];
+#define PORT_TEXTURE_GPU_BUDGET (64u*1024*1024)
+#define PORT_TEXTURE_SOURCE_BUDGET (16u*1024*1024)
+static unsigned port_texture_gpu_bytes,port_texture_source_bytes;
+static uint64_t port_texture_serial,port_texture_uploads;
+static void port_evict_texture(unsigned slot,int delete_id) {
+    if(port_cache[slot].valid){port_texture_gpu_bytes-=port_cache[slot].image_bytes;port_texture_source_bytes-=port_cache[slot].length;}
+    free(port_cache[slot].source);port_cache[slot].source=NULL;port_cache[slot].valid=0;
+    if(delete_id && port_cache[slot].id){glDeleteTextures(1,&port_cache[slot].id);port_cache[slot].id=0;}
+}
 static unsigned port_texture_count,port_texture_frame,port_palette_format;
 static uint32_t port_palette[1024];
 static void port_begin_textures(void) {
@@ -19,8 +29,11 @@ static void port_begin_textures(void) {
     for(unsigned i=0;i<1024;i++)port_palette[i]=dc_hw_read32(sh4_get_hardware(),0x005f9000+i*4);
 }
 static GLuint port_texture(uint32_t tcw,uint32_t tsp) {
+    /* Blend, shading and alpha flags do not change texture pixels or wrapping. */
+    tsp&=0x0007803f;
     int cached=-1;
-    for(unsigned i=0;i<port_texture_count;i++)if(port_cache[i].tcw==tcw && port_cache[i].tsp==tsp){cached=i;break;}
+    for(unsigned i=0;i<port_texture_count;i++)if(port_cache[i].valid && port_cache[i].tcw==tcw && port_cache[i].tsp==tsp){cached=i;break;}
+    if(cached>=0)port_cache[cached].used=++port_texture_serial;
     if(cached>=0 && port_cache[cached].frame==port_texture_frame)return port_cache[cached].id;
     unsigned w=8<<((tsp>>3)&7),h=8<<(tsp&7),fmt=(tcw>>27)&7;
     unsigned base=(tcw&0x1fffff)*8,linear=(tcw>>26)&1,vq=(tcw>>30)&1,mip=tcw>>31;
@@ -41,8 +54,16 @@ static GLuint port_texture(uint32_t tcw,uint32_t tsp) {
         port_cache[cached].frame=port_texture_frame;return port_cache[cached].id;
     }
     if(cached<0) {
-        if(port_texture_count<128)cached=port_texture_count++;
-        else {cached=0;for(unsigned i=1;i<128;i++)if(port_cache[i].frame<port_cache[cached].frame)cached=i;}
+        for(unsigned i=0;i<port_texture_count;i++)if(!port_cache[i].valid){cached=i;break;}
+        if(cached<0 && port_texture_count<512)cached=port_texture_count++;
+        if(cached<0){cached=0;for(unsigned i=1;i<port_texture_count;i++)if(port_cache[i].used<port_cache[cached].used)cached=i;}
+    }
+    port_evict_texture(cached,0);
+    unsigned image_bytes=w*h*4;
+    while(port_texture_gpu_bytes+image_bytes>PORT_TEXTURE_GPU_BUDGET || port_texture_source_bytes+length>PORT_TEXTURE_SOURCE_BUDGET){
+        int oldest=-1;
+        for(unsigned i=0;i<port_texture_count;i++)if((int)i!=cached && port_cache[i].valid && (oldest<0 || port_cache[i].used<port_cache[oldest].used))oldest=i;
+        if(oldest<0)abort();port_evict_texture(oldest,1);
     }
     for(unsigned y=0;y<h;y++)for(unsigned x=0;x<w;x++) {
         unsigned pixel;
@@ -71,35 +92,46 @@ static GLuint port_texture(uint32_t tcw,uint32_t tsp) {
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,(tsp&(1<<16))?GL_CLAMP_TO_EDGE:(tsp&(1<<18))?GL_MIRRORED_REPEAT:GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,(tsp&(1<<15))?GL_CLAMP_TO_EDGE:(tsp&(1<<17))?GL_MIRRORED_REPEAT:GL_REPEAT);
     glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,w,h,0,GL_RGBA,GL_UNSIGNED_BYTE,port_texels);
-    free(port_cache[cached].source);port_cache[cached].source=malloc(length);
+    port_cache[cached].source=malloc(length);
     if(!port_cache[cached].source)abort();
     unsigned first=length<0x800000-base?length:0x800000-base;
     memcpy(port_cache[cached].source,vram+base,first);
     if(first<length)memcpy(port_cache[cached].source+first,vram,length-first);
+    port_cache[cached].valid=1;port_cache[cached].used=++port_texture_serial;port_cache[cached].image_bytes=image_bytes;
+    port_texture_gpu_bytes+=image_bytes;port_texture_source_bytes+=length;port_texture_uploads++;
     port_cache[cached].length=length;port_cache[cached].tcw=tcw;port_cache[cached].tsp=tsp;port_cache[cached].frame=port_texture_frame;
     port_cache[cached].palette_format=palette_format;
     if(paletted)memcpy(port_cache[cached].palette,port_palette+bank,colors*4);
     return tex;
 }
 static void port_draw_materials(const PVR2TriList *list,int list_type) {
+    static GLuint shader;static GLint locations[5];
+    if(shader!=g_shader){
+        const char *names[]={"uTextured","uShading","uIgnoreAlpha","uUseAlpha","uPunch"};
+        for(int i=0;i<5;i++)locations[i]=glGetUniformLocation(g_shader,names[i]);shader=g_shader;
+    }
+    /* Other presenters/list setup can change GL state; invalidate per list. */
+    int uniforms[5]={-1,-1,-1,-1,-1},last_depth=-1,last_write=-1;
+    unsigned last_blend=~0u;GLuint last_texture=0;
+    glActiveTexture(GL_TEXTURE0);
+
     for(int at=0;at<list->count;) {
         const PVR2RenderVertex *v=list->vertices+at;int end=at+3;
         while(end<list->count && list->vertices[end].tcw==v->tcw && list->vertices[end].tsp==v->tsp && list->vertices[end].pcw==v->pcw && list->vertices[end].isp==v->isp)end+=3;
         static const GLenum depth_modes[]={GL_NEVER,GL_LESS,GL_EQUAL,GL_LEQUAL,GL_GREATER,GL_NOTEQUAL,GL_GEQUAL,GL_ALWAYS};
-        glDepthFunc(depth_modes[(v->isp>>29)&7]);
-        glDepthMask((list_type==PVR2_LIST_TRANS || (v->isp&(1u<<26)))?GL_FALSE:GL_TRUE);
+        int depth=(v->isp>>29)&7,write=!(list_type==PVR2_LIST_TRANS || (v->isp&(1u<<26)));
+        if(depth!=last_depth){glDepthFunc(depth_modes[depth]);last_depth=depth;}
+        if(write!=last_write){glDepthMask(write?GL_TRUE:GL_FALSE);last_write=write;}
         if(list_type==PVR2_LIST_TRANS){
             static const GLenum src_modes[]={GL_ZERO,GL_ONE,GL_DST_COLOR,GL_ONE_MINUS_DST_COLOR,GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA,GL_DST_ALPHA,GL_ONE_MINUS_DST_ALPHA};
             static const GLenum dst_modes[]={GL_ZERO,GL_ONE,GL_SRC_COLOR,GL_ONE_MINUS_SRC_COLOR,GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA,GL_DST_ALPHA,GL_ONE_MINUS_DST_ALPHA};
-            glBlendFunc(src_modes[v->tsp>>29],dst_modes[(v->tsp>>26)&7]);
+            unsigned blend=v->tsp>>26;
+            if(blend!=last_blend){glBlendFunc(src_modes[v->tsp>>29],dst_modes[(v->tsp>>26)&7]);last_blend=blend;}
         }
         int textured=(v->pcw>>3)&1;
-        glUniform1i(glGetUniformLocation(g_shader,"uTextured"),textured);
-        glUniform1i(glGetUniformLocation(g_shader,"uShading"),(v->tsp>>6)&3);
-        glUniform1i(glGetUniformLocation(g_shader,"uIgnoreAlpha"),(v->tsp>>19)&1);
-        glUniform1i(glGetUniformLocation(g_shader,"uUseAlpha"),(v->tsp>>20)&1);
-        glUniform1i(glGetUniformLocation(g_shader,"uPunch"),list_type==PVR2_LIST_PUNCHTHRU);
-        if(textured){glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,port_texture(v->tcw,v->tsp));}
+        int values[]={textured,(v->tsp>>6)&3,(v->tsp>>19)&1,(v->tsp>>20)&1,list_type==PVR2_LIST_PUNCHTHRU};
+        for(int i=0;i<5;i++)if(values[i]!=uniforms[i]){glUniform1i(locations[i],values[i]);uniforms[i]=values[i];}
+        if(textured){GLuint texture=port_texture(v->tcw,v->tsp);if(texture!=last_texture){glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,texture);last_texture=texture;}}
         glDrawArrays(GL_TRIANGLES,at,end-at);at=end;
     }
 }

@@ -21,6 +21,11 @@ EMSCRIPTEN_KEEPALIVE void port_axes(int left,int right,int x,int y) {
     MapleController *c=dc_maple_get_controller(sh4_get_hardware(),0);
     if(c) {c->ltrig=left;c->rtrig=right;c->joyx=x;c->joyy=y;}
 }
+EMSCRIPTEN_KEEPALIVE unsigned port_input(unsigned bits,int left,int right,int x,int y) {
+    MapleController *c=dc_maple_get_controller(sh4_get_hardware(),0);
+    if(c){c->buttons=(~bits)&0xffff;c->ltrig=left;c->rtrig=right;c->joyx=x;c->joyy=y;}
+    return c?((~c->buttons)&0xffff):0;
+}
 #endif
 
 void port_runtime_trace(void) {

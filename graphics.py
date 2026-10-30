@@ -38,6 +38,7 @@ def adapt(core,output,include,renderer):
     renderer=renderer.replace('#include \"recompiler/sh4_cpu.h\"','#include \"recompiler/sh4_cpu.h\"\n#include \"hal/dc_hardware.h\"')
     renderer=renderer.replace('void pvr2_render_frame(void) {','#include "texture_gl.h"\n\nvoid pvr2_render_frame(void) {\n    port_begin_textures();')
     renderer=renderer.replace('glDrawArrays(GL_TRIANGLES, 0, list->count);','port_draw_materials(list,draw_order[i]);')
+    renderer=renderer.replace('void pvr2_render_frame(void) {','void pvr2_render_frame(void) {\n    glEnable(GL_DEPTH_TEST); /* Framebuffer scanout disables it. */')
     renderer=renderer.replace('glDepthFunc(GL_LEQUAL);','glDepthFunc(GL_GEQUAL);glClearDepthf(0.0f);')
     renderer=renderer.replace('clamp(aPos.z * 0.0001, 0.0, 1.0)','clamp(aPos.z / (1.0 + max(aPos.z,0.0)), 0.0, 1.0)')
     renderer=renderer.replace('#include "texture_gl.h"', '#include "texture_gl.h"\n#include <emscripten.h>\nstatic int port_capture_samples;\nEMSCRIPTEN_KEEPALIVE void port_render_capture(void){port_capture_samples=128;}')
@@ -53,4 +54,7 @@ def adapt(core,output,include,renderer):
         }''')
     renderer=renderer.replace('#include "texture_gl.h"', '#include "transparency.h"\n#include "texture_gl.h"')
     renderer=renderer.replace('        /* Upload vertex data */', '        if(draw_order[i]==PVR2_LIST_TRANS && !(dc_hw_read32(sh4_get_hardware(),0x005f8098)&1))port_sort_transparent(list);\n        /* Upload vertex data */')
+    renderer=renderer.replace('#include "transparency.h"', '#include "platform/platform.h"\n#include "transparency.h"')
+    renderer=renderer.replace('    port_begin_textures();', '    uint64_t port_render_started=platform_get_ticks_us();\n    port_begin_textures();')
+    renderer=renderer.replace('    glUseProgram(0);\n}', '    glUseProgram(0);\n    static uint64_t total_us,max_us,reported,uploads;static unsigned frames;\n    uint64_t now=platform_get_ticks_us(),elapsed=now-port_render_started;\n    total_us+=elapsed;if(elapsed>max_us)max_us=elapsed;frames++;\n    if(now-reported>=5000000){printf("[RENDER] frames=%u submit_avg_us=%llu submit_max_us=%llu window_us=%llu tex_uploads=%llu tex_gpu_bytes=%u\\n",frames,(unsigned long long)(total_us/frames),(unsigned long long)max_us,(unsigned long long)(now-reported),(unsigned long long)(port_texture_uploads-uploads),port_texture_gpu_bytes);uploads=port_texture_uploads;reported=now;total_us=max_us=0;frames=0;}\n}')
     return renderer

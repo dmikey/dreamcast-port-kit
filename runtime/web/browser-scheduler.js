@@ -4,7 +4,7 @@
 class PortBrowserScheduler {
  constructor(){this.channel=null;this.waiters=[];}
  yield(){
-  if(document.hidden||typeof MessageChannel==='undefined')return new Promise(resolve=>setTimeout(resolve,0));
+  if((typeof document!=='undefined'&&document.hidden)||typeof MessageChannel==='undefined')return new Promise(resolve=>setTimeout(resolve,0));
   if(!this.channel){this.channel=new MessageChannel();this.channel.port1.onmessage=()=>{const resolve=this.waiters.shift();if(resolve)resolve();};}
   return new Promise(resolve=>{this.waiters.push(resolve);this.channel.port2.postMessage(0);});
  }

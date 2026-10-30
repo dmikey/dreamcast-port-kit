@@ -14,9 +14,9 @@ vm.runInContext('Module.onRuntimeInitialized();controllerFrame()',context);asser
 pads=[{connected:true,mapping:'standard',id:'test pad',axes:[.575,0],buttons:Array.from({length:16},()=>({value:0,pressed:false}))}];pads[0].buttons[7].value=.5;pads[0].buttons[6].value=.25;pads[0].buttons[1].pressed=true;
 vm.runInContext('controllerFrame()',context);assert.deepEqual(axes,[64,128,63,0]);assert.equal(pressed&2,2);
 pads=[];vm.runInContext('controllerFrame()',context);assert.deepEqual(axes,[0,0,0,0]);assert.equal(pressed,0);
-events.keydown({code:'KeyW',preventDefault(){}});events.keydown({code:'ArrowLeft',preventDefault(){}});vm.runInContext('controllerFrame()',context);assert.deepEqual(axes,[0,255,-127,0]);
+events.keydown({code:'KeyW',preventDefault(){}});assert.equal(axes[1],255,'keyboard input must not wait for an animation frame');events.keydown({code:'ArrowLeft',preventDefault(){}});assert.deepEqual(axes,[0,255,-127,0]);
 events.blur();assert.deepEqual(axes,[0,0,0,0]);assert.equal(pressed,0);
-events.focus();gas.handlers.pointerdown({preventDefault(){},pointerId:1});vm.runInContext('controllerFrame()',context);assert.equal(axes[1],255);gas.handlers.pointercancel();vm.runInContext('controllerFrame()',context);assert.equal(axes[1],0);
+events.focus();gas.handlers.pointerdown({preventDefault(){},pointerId:1});assert.equal(axes[1],255,'touch input must not wait for an animation frame');gas.handlers.pointercancel();assert.equal(axes[1],0);
 console.log('Input contract passed: initialization, analog triggers/stick, buttons, disconnect, keyboard, blur, touch cancellation.');
 
 vm.runInContext("const boundedTest=new DiagnosticRing(3);for(let i=0;i<5;i++)boundedTest.push('[FRAME] '+i,i);if(boundedTest.snapshot().map(e=>e.sequence).join(',')!=='2,3,4'||boundedTest.dropped!==2)throw Error('diagnostic ring order/overflow');",context);
