@@ -1,22 +1,47 @@
-<!doctype html>
-<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Dreamcast Port Lab</title><link rel="stylesheet" href="browser.css">
-<header><strong>DREAMCAST PORT LAB</strong><span>LOCAL BROWSER BUILD</span></header><main>
-<p id="status" role="status" hidden></p>
-<p id="runtime-error" role="alert" hidden></p>
-<div class="game-stage"><canvas id="canvas" width="640" height="480" tabindex="0" aria-label="Game display"></canvas>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Dreamcast Port Lab</title><link rel="stylesheet" href="browser.css"></head><body class="workbench-page">
+<header class="app-bar"><div class="brand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M7 5h10l3 12-3 2-3-3h-4l-3 3-3-2L7 5Z"/><path d="M7 10h5M9.5 7.5v5"/><circle cx="16" cy="10" r="1"/></svg><strong>Dreamcast <span>Port Lab</span></strong><span class="workspace-badge">WORKBENCH</span></div><span class="local-badge"><i></i> Local workspace</span></header>
+<main class="workbench">
+ <section class="preview-pane" aria-label="Game preview">
+  <div class="pane-heading"><div class="pane-title"><strong id="game-title">Dreamcast game</strong><span class="session-state"><i></i><span id="session-label">Stopped</span></span></div><div class="preview-actions"><button id="start" class="primary-button">▶ Start</button><button id="pause-game" disabled>Pause</button><a id="open-player" href="player.html" target="_blank" rel="noopener">Open player <span aria-hidden="true">↗</span></a></div></div>
+  <div class="controller-strip"><span id="controller" role="status">Keyboard &amp; touch ready</span><button id="toggle-pad" aria-pressed="true">On-screen controls: on</button></div>
+  <p id="runtime-error" role="alert" hidden></p><p id="status" role="status" hidden></p>
+  <div class="stage-screen"><div class="game-stage"><canvas id="canvas" width="640" height="480" tabindex="0" aria-label="Game display"></canvas>
 <div id="touch-pad" aria-label="Dreamcast touch controller">
 <button class="trigger trigger-l" data-axis="brake" aria-label="L trigger: brake">L <small>BRAKE</small></button>
 <button class="trigger trigger-r" data-axis="gas" aria-label="R trigger: accelerate">R <small>ACCELERATE</small></button>
 <div id="stick" role="group" aria-label="Analog steering stick"><span></span></div>
-<div class="dpad"><button class="up" data-bit="16" aria-label="D-pad up">▲</button><button class="left" data-bit="64" aria-label="D-pad left">◀</button><button class="right" data-bit="128" aria-label="D-pad right">▶</button><button class="down" data-bit="32" aria-label="D-pad down">▼</button></div>
+<div class="dpad"><button class="up" data-bit="16" aria-label="D-pad up">▲</button><button class="left" data-bit="64" aria-label="D-pad left">◀</button><button class="right" data-bit="128" aria-label="D-pad right">▶</button><button class="down" data-bit="32" aria-label="D-pad down">▼</button><button class="diagonal up-left" data-bit="80" data-diagonal="true" aria-label="D-pad up-left"></button><button class="diagonal up-right" data-bit="144" data-diagonal="true" aria-label="D-pad up-right"></button><button class="diagonal down-left" data-bit="96" data-diagonal="true" aria-label="D-pad down-left"></button><button class="diagonal down-right" data-bit="160" data-diagonal="true" aria-label="D-pad down-right"></button></div>
 <div class="face-buttons"><button class="face y" data-bit="512" aria-label="Y button">Y</button><button class="face x" data-bit="1024" aria-label="X button">X</button><button class="face b" data-bit="2" aria-label="B button: drive">B</button><button class="face a" data-bit="4" aria-label="A button: reverse">A</button></div>
 <button class="start-button" data-bit="8" aria-label="Start button">START</button>
-</div></div>
-<div class="page-controls" aria-label="Game settings">
-<div class="toolbar"><button id="start">Start game</button><button id="pause-game" disabled>Pause</button><button id="toggle-pad" aria-pressed="true">On-screen controls: on</button></div>
-<div class="toolbar"><span id="audio-status" role="status">Sound: off</span><button id="enable-audio">Enable sound</button><button id="mute-audio">Mute</button></div>
 </div>
-<p id="controller" role="status">Controller: connect a gamepad and press a button.</p>
-<p>Left stick: steer · RT: accelerate · LT: brake · B: drive · A: reverse</p>
-<p>Keyboard: Enter: Start · Z/X: A/B · A/S: X/Y · Arrow keys: steer / menus · Q/W: brake / accelerate</p>
-<details><summary>Runtime output</summary><pre id="log"></pre><button id="download-diagnostics">Download diagnostics</button><button id="capture-render">Capture render samples</button><button id="capture-audio">Capture 8 seconds of game audio</button><label>Draw pass diagnostic <select id="render-mode"><option value="7">Normal</option><option value="1">Opaque only</option><option value="4">Translucent only</option><option value="15">Depth disabled</option></select></label><button id="capture-snapshot">Save render snapshot</button><button id="capture-vram">Save VRAM snapshot</button><button id="capture-frame">Save game frame</button><label>Diagnostic input <select id="pulse-input"><option value="8,0,0,0,0">Start</option><option value="4,0,0,0,0">A / confirm</option><option value="2,0,0,0,0">B / drive</option><option value="32,0,0,0,0">Down</option><option value="16,0,0,0,0">Up</option><option value="2,0,255,0,0">Drive and accelerate</option></select></label><label>Hold milliseconds <input id="pulse-duration" type="number" min="16" max="60000" value="800"></label><button id="pulse-input-send">Hold diagnostic input</button><label>Input replay JSON <textarea id="input-replay" rows="3" aria-label="Input replay JSON">[]</textarea></label><button id="run-input-replay">Run input replay</button><button id="measure-performance">Measure 30 seconds</button><pre id="render-log" aria-label="First-frame material samples"></pre></details></main><script src="runtime-bridge.js"></script><script src="audio.js"></script><script src="browser.js"></script></html>
+  </div></div>
+
+ </section>
+ <aside class="inspector" aria-label="Test and debug tools">
+  <div class="inspector-heading"><strong>Inspector</strong><span>LIVE TOOLS</span></div>
+  <div class="inspector-tabs" role="tablist" aria-label="Inspector tools">
+   <button id="tab-runtime" role="tab" aria-selected="true" aria-controls="panel-runtime" data-panel="runtime">Runtime</button><button id="tab-input" role="tab" aria-selected="false" aria-controls="panel-input" data-panel="input" tabindex="-1">Input</button><button id="tab-render" role="tab" aria-selected="false" aria-controls="panel-render" data-panel="render" tabindex="-1">Render</button><button id="tab-audio" role="tab" aria-selected="false" aria-controls="panel-audio" data-panel="audio" tabindex="-1">Audio</button>
+  </div>
+  <section id="panel-runtime" role="tabpanel" aria-labelledby="tab-runtime" class="inspector-panel">
+   <h2>Execution</h2><div class="metric-grid"><div><span>Presented frames</span><strong id="metric-frames">—</strong></div><div><span>Average FPS</span><strong id="metric-fps">—</strong></div></div>
+   <dl class="properties"><div><dt>Target</dt><dd>WebAssembly / WebGL 2</dd></div><div><dt>Execution</dt><dd id="execution-mode">Not started</dd></div><div><dt>Build</dt><dd id="build-mode">—</dd></div><div><dt>WASM hash</dt><dd id="build-hash">—</dd></div></dl>
+   <h2>MCP connection</h2><dl class="properties"><div><dt>Local debugger</dt><dd id="mcp-status">Connecting</dd></div></dl><p class="tool-note">Typed tools: status, logs, pause, input, render modes and frame captures.</p><h2>Performance</h2><p class="tool-note">Measure a 30-second window in the preview. Keep the separate player closed during a measurement.</p><button id="measure-performance" class="wide-button">Measure 30 seconds</button><p id="benchmark-result" class="readout">No measurement yet.</p>
+   <div class="panel-note">The player opens a new session without these tools. Opening it pauses this preview.</div>
+  </section>
+  <section id="panel-input" role="tabpanel" aria-labelledby="tab-input" class="inspector-panel" hidden>
+   <h2>Controller state</h2><p class="field-caption">Buttons · LT · RT · X · Y</p><pre id="input-state" class="readout">—</pre><dl class="properties"><div><dt>Applied buttons</dt><dd id="input-applied">—</dd></div><div><dt>Pending states</dt><dd id="input-pending">—</dd></div></dl>
+   <h2>Input test</h2><label>Control<select id="pulse-input"><option value="8,0,0,0,0">Start</option><option value="4,0,0,0,0">A / confirm</option><option value="2,0,0,0,0">B / drive</option><option value="32,0,0,0,0">D-pad down</option><option value="16,0,0,0,0">D-pad up</option><option value="2,0,255,0,0">Drive + accelerate</option></select></label><label>Hold duration (ms)<input id="pulse-duration" type="number" min="16" max="60000" value="800"></label><button id="pulse-input-send" class="wide-button">Send input</button>
+   <h2>Keyboard</h2><p class="tool-note">Enter: Start · Z/X: A/B · A/S: X/Y<br>Arrows: steer / menus · Q/W: brake / accelerate</p>
+  </section>
+  <section id="panel-render" role="tabpanel" aria-labelledby="tab-render" class="inspector-panel" hidden>
+   <h2>Draw passes</h2><label>Render mode<select id="render-mode"><option value="7">Normal</option><option value="1">Opaque only</option><option value="4">Translucent only</option><option value="15">Depth disabled</option></select></label><div class="metric-grid"><div><span>Texture uploads</span><strong id="metric-uploads">—</strong></div><div><span>GPU texture bytes</span><strong id="metric-textures">—</strong></div></div>
+   <h2>Capture</h2><div class="button-stack"><button id="capture-frame">Save game frame</button><button id="capture-render">Capture material samples</button><button id="capture-vram">Save VRAM snapshot</button><button id="capture-snapshot">Save render snapshot</button></div><p class="tool-note">Captures download locally and may include disc-derived data.</p><pre id="render-log" aria-label="First-frame material samples"></pre>
+  </section>
+  <section id="panel-audio" role="tabpanel" aria-labelledby="tab-audio" class="inspector-panel" hidden>
+   <h2>Audio output</h2><p id="audio-status" role="status" class="readout">Sound: off</p><div class="button-stack"><button id="enable-audio">Enable sound</button><button id="mute-audio">Mute</button><button id="capture-audio">Capture 8 seconds of game audio</button></div><h2>Live signal</h2><dl class="properties"><div><dt>Source frames</dt><dd id="metric-audio">—</dd></div><div><dt>Nonzero frames</dt><dd id="metric-nonzero">—</dd></div><div><dt>Underruns</dt><dd id="metric-underruns">—</dd></div></dl><p class="tool-note">Sound begins after a user gesture. Captures contain the game mixer output.</p>
+  </section>
+ </aside>
+ <section class="console-pane" aria-label="Runtime console"><details open><summary><span>Console <small>RUNTIME OUTPUT</small></span></summary><div class="console-actions"><span id="console-count">0 events</span><button id="clear-console">Clear</button><button id="download-diagnostics">Download diagnostics</button></div><pre id="log" aria-live="off"></pre></details></section>
+</main>
+<script src="runtime-bridge.js"></script><script src="audio.js"></script><script src="workbench.js"></script><script src="debug-bridge.js"></script><script src="browser.js"></script>
+</body></html>

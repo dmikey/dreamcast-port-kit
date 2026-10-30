@@ -1,0 +1,15 @@
+/* Workbench presentation consumes the runtime's public diagnostics only. */
+'use strict';
+const portDevtools={
+ text(id,value){const node=document.getElementById(id);if(node)node.textContent=String(value);},
+ state(value){this.text('session-label',({idle:'Stopped',loading:'Loading',running:'Running',paused:'Paused',error:'Stopped · error'})[value]||value);for(const node of document.querySelectorAll('[data-runtime-control]'))node.disabled=!['running','paused'].includes(value);},
+ build(info){this.text('execution-mode',info.execution||'—');this.text('build-mode',info.optimization||'—');this.text('build-hash',info.wasmSHA256?.slice(0,16)||'—');},
+ record(line,total){this.text('console-count',total+' events');let match=line.match(/\[FRAME\] (\d+) rendered, ([\d.]+) fps/);if(match){this.text('metric-frames',match[1]);this.text('metric-fps',match[2]);}match=line.match(/tex_uploads=(\d+) tex_gpu_bytes=(\d+)/);if(match){this.text('metric-uploads',match[1]);this.text('metric-textures',Number(match[2]).toLocaleString());}if(line.startsWith('[BENCHMARK] {')){try{const result=JSON.parse(line.slice(12));this.text('benchmark-result',result.fps.toFixed(2)+' presentations / second\n'+(result.durationMs/1000).toFixed(2)+' seconds');}catch{}}},
+ sample(){const canvas=document.querySelector('#canvas');this.text('input-state',canvas.dataset.input||'—');this.text('input-applied',canvas.dataset.inputApplied||'—');if(typeof workerRuntime!=='undefined'&&workerRuntime)this.text('input-pending',workerRuntime.inputQueue.length);if(typeof portAudio!=='undefined'&&portAudio.received){this.text('metric-audio',portAudio.received.toLocaleString());this.text('metric-nonzero',portAudio.nonzero.toLocaleString());this.text('metric-underruns',portAudio.stats.underruns??'—');}}
+};
+const runtimeControls=['pulse-input-send','run-input-replay','measure-performance','render-mode','capture-frame','capture-render','capture-vram','capture-snapshot','capture-audio'];
+for(const id of runtimeControls){const node=document.getElementById(id);if(node){node.dataset.runtimeControl='true';node.disabled=true;}}
+const tabs=Array.from(document.querySelectorAll('[data-panel]'));
+function selectInspector(tab){for(const item of tabs){const selected=item===tab;item.setAttribute('aria-selected',String(selected));item.tabIndex=selected?0:-1;document.getElementById('panel-'+item.dataset.panel).hidden=!selected;}}
+for(const tab of tabs){tab.addEventListener('click',()=>selectInspector(tab));tab.addEventListener('keydown',event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();let index=tabs.indexOf(tab);index=event.key==='Home'?0:event.key==='End'?tabs.length-1:(index+(event.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;selectInspector(tabs[index]);tabs[index].focus();});}
+setInterval(()=>portDevtools.sample(),500);

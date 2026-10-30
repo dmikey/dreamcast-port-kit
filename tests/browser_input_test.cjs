@@ -4,7 +4,7 @@ const events={},nodes=new Map(),buttons=[],timers=new Map();let timerId=0;
 function listen(n,f){const previous=events[n];events[n]=previous?e=>{previous(e);f(e);}:f;}
 const pointer=(pointerId=1)=>({pointerId,preventDefault(){}});
 function node(id){if(!nodes.has(id))nodes.set(id,{id,textContent:'',dataset:{},style:{},handlers:{},hidden:false,addEventListener(n,f){this.handlers[n]=f;},setAttribute(n,v){this[n]=v;},querySelector(){return node('knob');},getBoundingClientRect(){return{left:0,top:0,width:100};},setPointerCapture(){},focus(){},append(){}});return nodes.get(id);}
-for(const [id,bit]of[['startbtn',8],['a',4],['b',2]]){const b=node(id);b.dataset.bit=String(bit);buttons.push(b);}
+for(const [id,bit]of[['startbtn',8],['a',4],['b',2],['up-left',80],['up-right',144],['down-left',96],['down-right',160]]){const b=node(id);b.dataset.bit=String(bit);buttons.push(b);}
 const gas=node('gas');gas.dataset.axis='gas';buttons.push(gas);
 let pads=[],axes,pressed=0,calls=0;
 const context=vm.createContext({document:{hasFocus:()=>true,querySelector:node,querySelectorAll:()=>buttons,addEventListener:listen},window:{addEventListener:listen},navigator:{getGamepads:()=>pads},requestAnimationFrame(){},setTimeout(fn){timers.set(++timerId,fn);return timerId;},clearTimeout(id){timers.delete(id);},setInterval(){},performance:{now:()=>1000},console:{log(){}}});
@@ -36,3 +36,14 @@ gas.handlers.click({detail:0});events.blur();assert.equal(timers.size,0);assert.
 gas.handlers.pointerdown(pointer(6));node('#toggle-pad').handlers.click({currentTarget:node('#toggle-pad')});assert.equal(axes[1],0,'hiding the overlay releases immediately');
 const joystick=node('#stick');joystick.handlers.pointerdown({...pointer(7),clientX:100,clientY:50});assert.equal(axes[2],127);events.pointerup(pointer(7));assert.equal(axes[2],0);
 console.log('Rapid input regression passed: 1,000 taps, multi-pointer ownership, stale capture, capture failure, assistive clicks, immediate stick release and hidden controls.');
+
+vm.runInContext("const clearTest=new DiagnosticRing(3);clearTest.push('first',1);clearTest.clear();if(clearTest.snapshot().length)throw Error('clear must discard old entries');clearTest.push('second',2);if(clearTest.snapshot()[0].sequence!==1)throw Error('clear must preserve the debug cursor sequence');",context);
+console.log('Console clear passed: entries released without reusing MCP event sequence numbers.');
+
+context.document.body={dataset:{player:'true'}};pads=[];vm.runInContext('controllerFrame()',context);assert.equal(node('#touch-pad').hidden,false,'standalone player exposes overlay without a gamepad');
+gas.handlers.pointerdown(pointer(101));pads=[{connected:true,mapping:'standard',id:'auto overlay pad',axes:[0,0],buttons:Array.from({length:16},()=>({value:0,pressed:false}))}];vm.runInContext('controllerFrame()',context);assert.equal(node('#touch-pad').hidden,true);assert.equal(axes[1],0,'controller takeover releases held overlay triggers');
+pads=[];vm.runInContext('controllerFrame()',context);assert.equal(node('#touch-pad').hidden,false,'disconnect restores the player overlay');
+console.log('Player overlay passed: visible by default, hidden for supported gamepad, restored on disconnect.');
+
+pads=[];for(const [id,bits,x] of [['up-left',80,-127],['up-right',144,127],['down-left',96,-127],['down-right',160,127]]){const b=node(id);b.handlers.pointerdown(pointer(200));assert.equal(pressed,bits,id+' must press both cardinal bits');assert.equal(axes[2],x);b.handlers.pointerup(pointer(200));assert.equal(pressed,0);assert.equal(axes[2],0);}
+console.log('D-pad corners passed: all four invisible diagonal regions press both directions and release cleanly.');

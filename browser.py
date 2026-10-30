@@ -1,7 +1,14 @@
 """Browser build: same exact translated code, WebGL, and streamed local disc."""
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
-import hashlib,json,subprocess,shutil,os,sys
+import hashlib,json,subprocess,shutil,os,sys,html
+
+def publish_web_assets(kit,project,output):
+    names=('index.html','player.html','workbench.js','debug-bridge.js','browser.js','browser.css','browser-scheduler.js','runtime-bridge.js','runtime-worker.js','audio.js','audio-worklet.js')
+    for name in names:shutil.copyfile(kit/'runtime/web'/name,output/name)
+    title=json.loads((project/'port.json').read_text()).get('disc',{}).get('title','Dreamcast game')
+    page=output/'index.html'
+    page.write_text(page.read_text().replace('>Dreamcast game</strong>','>'+html.escape(title)+'</strong>'))
 
 def publish_bundle(output):
     # Publish the loader only after its content-addressed WASM is complete.
@@ -114,6 +121,6 @@ def build(args,kit,error,verify,write_json):
     (output/'link.log').write_text(result.stdout+result.stderr)
     if result.returncode:raise error('WebAssembly link: '+result.stderr[-2500:])
     publish_bundle(output)
-    for name in ('index.html' ,'browser.js','browser.css','browser-scheduler.js','runtime-bridge.js','runtime-worker.js','audio.js','audio-worklet.js'):shutil.copyfile(kit/'runtime/web'/name,output/name)
+    publish_web_assets(kit,project,output)
     write_json(output/'build.json',{'target':'browser-webgl2','execution':'dedicated-worker-offscreen','optimization':'O2-debug' if args.abi else 'O3-thinlto' if optimized else 'O2','playable':False,'abiChecks':bool(args.abi),'scheduler':'message-channel-8ms','sourceSetSHA256':json.loads((project/'port.json').read_text())['sourceSetSHA256'],'wasmSHA256':hashlib.sha256((output/'game.wasm').read_bytes()).hexdigest()})
     print('Browser build ready. Run serve-browser; gameplay remains unverified.')

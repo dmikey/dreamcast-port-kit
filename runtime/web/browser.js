@@ -1,20 +1,22 @@
 'use strict';
-const status=document.querySelector('#status'),log=document.querySelector('#log');
+const status=document.querySelector('#status')||{textContent:''},log=document.querySelector('#log');
+function runtimeState(value){if(document.body?.dataset)document.body.dataset.runtime=value;if(typeof portDevtools!=='undefined')portDevtools.state(value);}
 // Bounded diagnostic history. Rendering logs is batched outside the hot path.
 class DiagnosticRing {
- constructor(capacity){this.capacity=capacity;this.slots=new Array(capacity);this.total=0;}
+ constructor(capacity){this.capacity=capacity;this.slots=new Array(capacity);this.total=0;this.cleared=0;}
  push(message,time){const event={sequence:this.total,timeMs:time,kind:message.match(/^\[([^\]]+)\]/)?.[1]||'runtime',message};this.slots[this.total++%this.capacity]=event;return event;}
- snapshot(){const start=Math.max(0,this.total-this.capacity);return Array.from({length:this.total-start},(_,i)=>this.slots[(start+i)%this.capacity]);}
- get dropped(){return Math.max(0,this.total-this.capacity);}
+ snapshot(){const start=Math.max(this.cleared,this.total-this.capacity);return Array.from({length:this.total-start},(_,i)=>this.slots[(start+i)%this.capacity]);}
+ clear(){this.slots=new Array(this.capacity);this.cleared=this.total;}
+ get dropped(){return Math.max(0,this.total-this.cleared-this.capacity);}
 }
 const diagnostics=new DiagnosticRing(2048);
 let logDirty=false,lastProgress=0,freezeReported=false;
-function flushLog(){if(!logDirty)return;const details=document.querySelector('details');if(!details.open&&!status.textContent.startsWith('Execution stopped'))return;log.textContent=diagnostics.snapshot().slice(-350).map(e=>e.message).join('\n');log.scrollTop=log.scrollHeight;logDirty=false;}
+function flushLog(){if(!logDirty||!log)return;const details=document.querySelector('details');if(details&&!details.open&&!status.textContent.startsWith('Execution stopped'))return;log.textContent=diagnostics.snapshot().slice(-350).map(e=>e.message).join('\n');log.scrollTop=log.scrollHeight;logDirty=false;}
 function output(...parts){
- const text=parts.join(' '),now=performance.now();diagnostics.push(text,now);logDirty=true;
+ const text=parts.join(' '),now=performance.now();diagnostics.push(text,now);logDirty=true;if(typeof portDevtools!=='undefined')portDevtools.record(text,diagnostics.total-diagnostics.cleared);
  if(text.includes('[MATERIAL]')){const samples=document.querySelector('#render-log');if(samples)samples.textContent+=text+'\n';}
  if(text.includes('[FRAME]')||text.includes('[HEARTBEAT]')){lastProgress=now;freezeReported=false;}
- if(text.includes('[DISPATCH] unresolved')||text.includes('[UNIMPLEMENTED]')){status.textContent='Execution stopped: '+text;flushLog();}
+ if(text.includes('[DISPATCH] unresolved')||text.includes('[UNIMPLEMENTED]')){status.textContent='Execution stopped: '+text;runtimeState('error');flushLog();}
  if(text.includes('entering title code'))status.textContent='Running original game code. Local development build.';
  if(!text.startsWith('[STARTUP]')&&(/\[PVR2\] Shader (compile|link) error/.test(text)||/\[PLATFORM\].*failed:/.test(text)))startupFailure(text);
 }
@@ -25,18 +27,18 @@ function reportStartup(reason){
  const payload={schemaVersion:1,reason:String(reason).slice(0,1000),userAgent:navigator.userAgent||'',runtimeReady,events:diagnostics.snapshot().slice(-40).map(e=>({kind:e.kind,message:e.message.slice(0,1000)}))};
  fetch('/diagnostics',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).catch(()=>{});
 }
-function startupFailure(reason){const error=document.querySelector('#runtime-error');error.hidden=false;error.textContent='Game could not start: '+reason;output('[STARTUP] '+reason);reportStartup(reason);}
-var Module={onRuntimeInitialized:()=>{runtimeReady=true;const pause=document.querySelector('#pause-game');if(pause)pause.disabled=false;reportStartup('Runtime initialized');},canvas:document.querySelector('#canvas'),print:output,printErr:output,setStatus:text=>{if(text)status.textContent=text;},onAbort:reason=>{status.textContent='Execution stopped. See runtime output.';output('Runtime aborted:',reason);}};
+function startupFailure(reason){runtimeState('error');const error=document.querySelector('#runtime-error');error.hidden=false;error.textContent='Game could not start: '+reason;output('[STARTUP] '+reason);reportStartup(reason);}
+var Module={onRuntimeInitialized:()=>{runtimeReady=true;runtimeState('running');const pause=document.querySelector('#pause-game');if(pause)pause.disabled=false;reportStartup('Runtime initialized');},canvas:document.querySelector('#canvas'),print:output,printErr:output,setStatus:text=>{if(text)status.textContent=text;},onAbort:reason=>{status.textContent='Execution stopped. See runtime output.';output('Runtime aborted:',reason);}};
 Module.onAbort=reason=>startupFailure(String(reason));
 Module.onExit=code=>{if(code)startupFailure('Runtime exited with code '+code+'. Expand Runtime output for details.');};
 Module.portAudioPush=samples=>{if(typeof portAudio!=='undefined')portAudio.push(samples);};
 Module.portBrowserYield=()=>typeof portBrowserScheduler!=='undefined'?portBrowserScheduler.yield():new Promise(resolve=>setTimeout(resolve,0));
-document.querySelector('#start').addEventListener('click',()=>{
+function startRuntime(startAudio=true){
  if(typeof WebAssembly==='undefined'){startupFailure('This browser does not provide WebAssembly.');return;}
  if(typeof Worker==='undefined'||typeof Module.canvas.transferControlToOffscreen!=='function'){startupFailure('Web Workers and WebGL OffscreenCanvas are required (Safari 17 or newer).');return;}
- if(typeof portAudio!=='undefined')portAudio.start().catch(error=>{output('[AUDIO] '+error.message);reportStartup('Audio: '+error.message);});
- if(typeof fetch==='function')fetch('build.json').then(response=>response.json()).then(info=>{buildInfo=info;}).catch(()=>{});
- document.querySelector('#start').disabled=true;status.textContent='Loading worker runtime…';reportStartup('Starting worker runtime');
+ if(startAudio&&typeof portAudio!=='undefined')portAudio.start().catch(error=>{output('[AUDIO] '+error.message);reportStartup('Audio: '+error.message);});
+ if(typeof fetch==='function')fetch('build.json').then(response=>response.json()).then(info=>{buildInfo=info;if(typeof portDevtools!=='undefined')portDevtools.build(info);}).catch(()=>{});
+ document.querySelector('#start').disabled=true;runtimeState('loading');status.textContent='Loading worker runtime…';reportStartup('Starting worker runtime');
  try{
   workerRuntime=new PortWorkerRuntime(Module.canvas,{ready:()=>Module.onRuntimeInitialized(),log:output,audio:Module.portAudioPush,frame:saveFrame,snapshot:bytes=>saveDownload(bytes,'application/octet-stream','dreamcast-render-snapshot.bin'),vram:bytes=>saveDownload(bytes,'application/octet-stream','dreamcast-vram.bin'),benchmark:result=>{measurements.push(result);output('[BENCHMARK] '+JSON.stringify(result));},error:startupFailure});
   Module._port_button=(bit,pressed)=>workerRuntime.button(bit,pressed);
@@ -44,7 +46,8 @@ document.querySelector('#start').addEventListener('click',()=>{
   Module._port_render_capture=()=>workerRuntime.capture();
   workerRuntime.start();Module.canvas.focus();
  }catch(error){startupFailure(error.message||String(error));}
-});
+}
+document.querySelector('#start').addEventListener('click',()=>startRuntime(true));
 
 // One browser input owner combines keyboard, touch and the standard Gamepad API.
 const keys=new Set(),touch=new Set(),pointerOwners=new Map(),clickTimers=new Map();
@@ -61,8 +64,9 @@ function pollController(){
  let pads=[];try{pads=navigator.getGamepads?Array.from(navigator.getGamepads()):[];}catch{}
  const pad=pads.find(p=>p&&p.connected&&p.mapping==='standard');
  const other=pads.find(p=>p&&p.connected);
+ if(document.body?.dataset?.player==='true'){const overlay=document.querySelector('#touch-pad');if(overlay.hidden!==!!pad){overlay.hidden=!!pad;clearTouch();}}
  const name=pad?'Controller connected: '+pad.id:other?'Controller detected; standard mapping unavailable. Use keyboard or touch.':'Controller: connect a gamepad and press a button.';
- if(name!==lastController){controllerStatus.textContent=name;lastController=name;}
+ if(name!==lastController){if(controllerStatus)controllerStatus.textContent=name;lastController=name;}
  if(inputActive){
   for(const code of keys)bits|=keyButtons[code]||0;
   for(const b of document.querySelectorAll('[data-bit]'))if(touch.has(b))bits|=Number(b.dataset.bit);
@@ -80,6 +84,7 @@ function pollController(){
    if(!x)x=(bits&128?127:0)-(bits&64?127:0);
   }
  }
+ for(const button of document.querySelectorAll('.dpad [data-bit]'))if(button.dataset.diagonal!=='true')button.setAttribute('data-active',String(!!(bits&Number(button.dataset.bit))));
  if(runtimeReady&&Module._port_axes&&Module._port_button){
   for(const bit of gameBits)Module._port_button(bit,(bits&bit)?1:0);
   Module._port_axes(left,right,x,y);
@@ -120,19 +125,19 @@ stickElement.addEventListener('pointermove',event=>{if(event.pointerId===stickPo
 function releaseStick(event){if(event.pointerId===stickPointer){resetStick();pollController();}}
 for(const name of ['pointerup','pointercancel','lostpointercapture'])stickElement.addEventListener(name,releaseStick);
 window.addEventListener('pointerup',releaseStick);window.addEventListener('pointercancel',releaseStick);
-document.querySelector('#toggle-pad').addEventListener('click',event=>{const pad=document.querySelector('#touch-pad');pad.hidden=!pad.hidden;event.currentTarget.setAttribute('aria-pressed',String(!pad.hidden));event.currentTarget.textContent='On-screen controls: '+(pad.hidden?'off':'on');clearTouch();pollController();});
+document.querySelector('#toggle-pad')?.addEventListener('click',event=>{const pad=document.querySelector('#touch-pad');pad.hidden=!pad.hidden;event.currentTarget.setAttribute('aria-pressed',String(!pad.hidden));event.currentTarget.textContent='On-screen controls: '+(pad.hidden?'off':'on');clearTouch();pollController();});
 
-document.querySelector('#capture-render').addEventListener('click',()=>{if(runtimeReady&&Module._port_render_capture){document.querySelector('#render-log').textContent='';Module._port_render_capture();}});
+document.querySelector('#capture-render')?.addEventListener('click',()=>{if(runtimeReady&&Module._port_render_capture){document.querySelector('#render-log').textContent='';Module._port_render_capture();}});
 
-document.querySelector('details').addEventListener('toggle',flushLog);
-document.querySelector('#download-diagnostics').addEventListener('click',()=>{
+document.querySelector('details')?.addEventListener('toggle',flushLog);
+document.querySelector('#download-diagnostics')?.addEventListener('click',()=>{
  const report={schemaVersion:1,source:'dreamcast-port-kit browser runtime',userAgent:navigator.userAgent||'',build:buildInfo,execution:workerRuntime?'dedicated-worker':'not-started',status:status.textContent,input:{requested:Module.canvas.dataset.input,appliedButtons:Module.canvas.dataset.inputApplied,lastPressed:Module.canvas.dataset.lastPressed,pending:workerRuntime?.inputQueue.length,inFlight:workerRuntime?.inputInFlight,coalesced:workerRuntime?.inputCoalesced,dropped:workerRuntime?.inputDropped},eventsDropped:diagnostics.dropped,events:diagnostics.snapshot(),measurements,diagnosticRenderMode:Number(document.querySelector('#render-mode')?.value||7),audioOutputImplemented:true,audio:typeof portAudio==='undefined'?null:{...portAudio.stats,received:portAudio.received,nonzeroReceived:portAudio.nonzero,contextState:portAudio.context?.state,muted:portAudio.muted}};
  const url=URL.createObjectURL(new Blob([JSON.stringify(report,null,2)],{type:'application/json'}));
  const link=document.createElement('a');link.href=url;link.download='dreamcast-diagnostics.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 });
 
 function saveDownload(bytes,type,name){const url=URL.createObjectURL(new Blob([bytes],{type}));const link=document.createElement('a');link.href=url;link.download=name;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
-function saveFrame(bytes){saveDownload(bytes,'image/png','dreamcast-frame.png');}
+function saveFrame(bytes){if(typeof portDebugBridge!=='undefined'&&portDebugBridge.frame(bytes))return;saveDownload(bytes,'image/png','dreamcast-frame.png');}
 document.querySelector('#capture-vram')?.addEventListener('click',()=>workerRuntime?.vram());
 document.querySelector('#capture-frame')?.addEventListener('click',()=>workerRuntime?.frame());
 document.querySelector('#pulse-input-send')?.addEventListener('click',()=>{const values=document.querySelector('#pulse-input').value.split(',').map(Number),duration=Number(document.querySelector('#pulse-duration').value);workerRuntime?.pulse(values,duration);});
@@ -142,6 +147,29 @@ document.querySelector('#measure-performance')?.addEventListener('click',()=>wor
 document.querySelector('#render-mode')?.addEventListener('change',event=>workerRuntime?.mode(Number(event.target.value)));
 
 let gamePaused=false;
-document.querySelector('#pause-game')?.addEventListener('click',event=>{gamePaused=!gamePaused;workerRuntime?.pause(gamePaused);lastProgress=performance.now();freezeReported=false;event.currentTarget.textContent=gamePaused?'Resume':'Pause';if(typeof portAudio!=='undefined'&&portAudio.context){const action=gamePaused?'suspend':'resume';portAudio.context[action]?.().catch(error=>output('[AUDIO] '+error.message));}});
+document.querySelector('#pause-game')?.addEventListener('click',event=>{gamePaused=!gamePaused;runtimeState(gamePaused?'paused':'running');workerRuntime?.pause(gamePaused);lastProgress=performance.now();freezeReported=false;event.currentTarget.textContent=gamePaused?'Resume':'Pause';if(typeof portAudio!=='undefined'&&portAudio.context){const action=gamePaused?'suspend':'resume';portAudio.context[action]?.().catch(error=>output('[AUDIO] '+error.message));}});
 
 document.querySelector('#capture-snapshot')?.addEventListener('click',()=>workerRuntime?.snapshot());
+
+// The standalone player shares the runtime and input path, with no workbench UI.
+document.querySelector('#clear-console')?.addEventListener('click',()=>{diagnostics.clear();logDirty=false;if(log)log.textContent='';if(typeof portDevtools!=='undefined')portDevtools.record('',0);});
+document.querySelector('#open-player')?.addEventListener('click',()=>{if(runtimeReady&&!gamePaused){gamePaused=true;workerRuntime?.pause(true);runtimeState('paused');document.querySelector('#pause-game').textContent='Resume';if(typeof portAudio!=='undefined')portAudio.context?.suspend().catch(error=>output('[AUDIO] '+error.message));}});
+
+// Public, bounded runtime operations used by the local MCP transport.
+const portDebugRuntime={
+ status(){return {protocolVersion:1,state:document.body.dataset.runtime||'idle',ready:runtimeReady,paused:gamePaused,progressAgeMs:lastProgress?Math.round(performance.now()-lastProgress):null,input:{requested:Module.canvas.dataset.input||null,appliedButtons:Module.canvas.dataset.inputApplied||null,pending:workerRuntime?.inputQueue.length??0},audio:typeof portAudio==='undefined'?null:{state:portAudio.context?.state||'not-started',received:portAudio.received,nonzero:portAudio.nonzero,underruns:portAudio.stats.underruns??null},build:buildInfo};},
+ events(after,limit){return diagnostics.snapshot().filter(event=>event.sequence>after).slice(0,limit).map(event=>({sequence:event.sequence,message:event.message.slice(0,2000)}));},
+ async command(name,args){
+  output('[MCP] '+name);
+  if(name==='start'){if(!runtimeReady&&!document.querySelector('#start').disabled)startRuntime(false);return {accepted:true,state:this.status()};}
+  if(!runtimeReady)throw Error('Start the preview or player first.');
+  if(name==='pause'){gamePaused=args.paused;lastProgress=performance.now();freezeReported=false;workerRuntime.pause(gamePaused);runtimeState(gamePaused?'paused':'running');const pause=document.querySelector('#pause-game');if(pause)pause.textContent=gamePaused?'Resume':'Pause';if(typeof portAudio!=='undefined'&&portAudio.context)await portAudio.context[gamePaused?'suspend':'resume']().catch(()=>{});return {accepted:true,paused:gamePaused};}
+  if(name==='press_button'){if(gamePaused)throw Error('Resume execution before testing input.');const bits={A:4,B:2,X:1024,Y:512,Start:8,Up:16,Down:32,Left:64,Right:128};workerRuntime.pulse([bits[args.button],0,0,0,0],args.duration_ms);return {accepted:true,button:args.button,duration_ms:args.duration_ms};}
+  if(name==='drive'){if(gamePaused)throw Error('Resume execution before testing input.');workerRuntime.pulse([2,Math.round(args.brake*255),Math.round(args.accelerator*255),Math.round(args.steer*127),0],args.duration_ms);return {accepted:true,duration_ms:args.duration_ms};}
+  if(name==='render_mode'){const modes={normal:7,opaque:1,translucent:4,'no-depth':15};workerRuntime.mode(modes[args.mode]);const select=document.querySelector('#render-mode');if(select)select.value=String(modes[args.mode]);return {accepted:true,mode:args.mode};}
+  if(name==='capture_frame'){if(gamePaused)throw Error('Resume execution before capturing a new frame.');if(portDebugBridge.frameWaiter)throw Error('A frame capture is already pending.');const frame=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>{portDebugBridge.frameWaiter=null;reject(Error('Frame capture timed out.'));},5000);portDebugBridge.frameWaiter=bytes=>{clearTimeout(timer);resolve(bytes);};workerRuntime.frame();});return {frame};}
+  throw Error('Unsupported runtime command.');
+ }
+};
+
+if(document.body?.dataset?.player==='true')document.addEventListener('pointerdown',()=>{if(runtimeReady&&typeof portAudio!=='undefined'&&portAudio.context?.state!=='running')portAudio.start().catch(error=>output('[AUDIO] '+error.message));});

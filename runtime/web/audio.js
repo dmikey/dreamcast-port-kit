@@ -38,7 +38,7 @@ class DreamcastAudio {
  }
 }
 const portAudio=new DreamcastAudio();
-document.querySelector('#enable-audio').addEventListener('click',()=>portAudio.start().catch(error=>{document.querySelector('#audio-status').textContent='Sound: '+error.message;}));
-document.querySelector('#mute-audio').addEventListener('click',event=>{event.currentTarget.textContent=portAudio.toggle()?'Unmute':'Mute';});
-document.querySelector('#capture-audio').addEventListener('click',()=>portAudio.record());
+document.querySelector('#enable-audio')?.addEventListener('click',()=>portAudio.start().catch(error=>{document.querySelector('#audio-status').textContent='Sound: '+error.message;}));
+document.querySelector('#mute-audio')?.addEventListener('click',event=>{event.currentTarget.textContent=portAudio.toggle()?'Unmute':'Mute';});
+document.querySelector('#capture-audio')?.addEventListener('click',()=>portAudio.record());
 document.addEventListener('visibilitychange',()=>{if(document.hidden)portAudio.reset();});

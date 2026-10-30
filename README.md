@@ -15,6 +15,8 @@ game.** Runtime/hardware adaptation, graphics, audio, asset formats and gameplay
 verification can require title-specific work. The same process and shared fixes
 apply to new titles; compatibility must be demonstrated for each one.
 
+![Dreamcast Port Lab workbench with live game preview, inspector, and runtime console](docs/images/workbench.png)
+
 ## Start a port
 
 Python 3.9+ (3.10+ for Emscripten), `git`, `bsdtar`, and a C11 compiler are required. Native diagnostics
@@ -282,9 +284,23 @@ checks synthetic PCM16/PCM8, ADPCM vectors, pitch, loops, global key execution,
 stereo routing and master mute under address/undefined-behavior sanitizers.
 A fixture passing does not establish a particular game's music or speech.
 
-The browser shell is named **Dreamcast Port Lab**. Its 4:3 game canvas is
-centered, with page settings below the game and no duplicate page heading or
-startup status paragraph. Fatal diagnostics remain available in Runtime output.
+## Workbench and player
+
+**Dreamcast Port Lab** opens a viewport-sized workbench at `/`: a centered 4:3
+preview, runtime/input/render/audio inspector, and a scrolling console. The
+compact preview toolbar contains session actions, with controller status above
+the game. Inspector and console content scroll within their panels.
+
+**Open player** pauses the preview and opens `/player.html` as a fresh game-only
+session. The player shows touch controls until a supported, standard-mapped
+gamepad connects, then restores them when it disconnects. Invisible D-pad corner
+hit areas press both neighboring directions. Each session runs independently;
+opening the player does not transfer game state.
+
+The optional [MCP debugger](docs/mcp-debugging.md) exposes typed tools for session
+discovery, status/events, bounded input, pause, render modes and frame captures.
+It uses the official Python MCP SDK over stdio and a same-origin loopback bridge.
+No arbitrary browser code or raw memory writes are exposed.
 
 ## Safari startup diagnostics
 
@@ -324,7 +340,7 @@ number is not a new Safari FPS measurement.
 
 The worker can run a bounded input timeline, capture the current frame or VRAM,
 isolate rendering passes, pause execution, and measure 30 seconds of platform
-presentations. These controls live under Runtime output. Replay is a debugging
+presentations. These controls live in the inspector. Replay is a debugging
 input script, not an authoritative or deterministic game replay. Manual input
 and pause cancel a pending script. Diagnostic render modes must be restored to
 Normal before recording performance. GPU completion is not measured.

@@ -1,0 +1,14 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Dreamcast Player</title><link rel="stylesheet" href="browser.css"></head><body class="player-page" data-player="true">
+<div class="stage-screen"><div class="game-stage"><canvas id="canvas" width="640" height="480" tabindex="0" aria-label="Game display"></canvas>
+<div id="touch-pad" aria-label="Dreamcast touch controller">
+<button class="trigger trigger-l" data-axis="brake" aria-label="L trigger: brake">L <small>BRAKE</small></button>
+<button class="trigger trigger-r" data-axis="gas" aria-label="R trigger: accelerate">R <small>ACCELERATE</small></button>
+<div id="stick" role="group" aria-label="Analog steering stick"><span></span></div>
+<div class="dpad"><button class="up" data-bit="16" aria-label="D-pad up">▲</button><button class="left" data-bit="64" aria-label="D-pad left">◀</button><button class="right" data-bit="128" aria-label="D-pad right">▶</button><button class="down" data-bit="32" aria-label="D-pad down">▼</button><button class="diagonal up-left" data-bit="80" data-diagonal="true" aria-label="D-pad up-left"></button><button class="diagonal up-right" data-bit="144" data-diagonal="true" aria-label="D-pad up-right"></button><button class="diagonal down-left" data-bit="96" data-diagonal="true" aria-label="D-pad down-left"></button><button class="diagonal down-right" data-bit="160" data-diagonal="true" aria-label="D-pad down-right"></button></div>
+<div class="face-buttons"><button class="face y" data-bit="512" aria-label="Y button">Y</button><button class="face x" data-bit="1024" aria-label="X button">X</button><button class="face b" data-bit="2" aria-label="B button: drive">B</button><button class="face a" data-bit="4" aria-label="A button: reverse">A</button></div>
+<button class="start-button" data-bit="8" aria-label="Start button">START</button>
+</div>
+</div></div>
+<div class="player-start"><button id="start" class="primary-button">▶ Play game</button></div><p id="runtime-error" role="alert" hidden></p>
+<script src="runtime-bridge.js"></script><script src="audio.js"></script><script src="debug-bridge.js"></script><script src="browser.js"></script>
+</body></html>
