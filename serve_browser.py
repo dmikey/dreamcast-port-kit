@@ -2,9 +2,10 @@
 from http.server import ThreadingHTTPServer,SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlsplit,parse_qs,unquote
-import argparse,html,json,secrets,threading
+import argparse,html,json,secrets,threading,time
 from debug_service import DebugBroker
 from workspace import Workspace,DEFAULT
+from vmu import VmuStore,VmuConflict,etag
 from artifacts import ID,WEB_NAMES,read_json,list_artifacts
 
 
@@ -20,7 +21,7 @@ def serve(args):
                 project=workspace.resolve(identity);broker=DebugBroker(project)
                 connection=project/'.local/debug-connection.json'
                 connection.write_text(json.dumps({'token':broker.token,'url':f'http://127.0.0.1:{args.port}','basePath':'/projects/'+identity+'/'})+'\n');connection.chmod(0o600)
-                contexts[identity]=(project,broker)
+                contexts[identity]=(project,broker,VmuStore(project))
             return contexts[identity]
     class Handler(SimpleHTTPRequestHandler):
         def route(self):
@@ -36,7 +37,7 @@ def serve(args):
                     self.artifact=parts[4]
                     if not ID.fullmatch(self.artifact):raise ValueError('Invalid artifact id')
                     self.local_path='/'+'/'.join(parts[5:])
-            self.project,self.broker=context(self.identity)
+            self.project,self.broker,self.vmu=context(self.identity)
             self.root=self.project/'.local/browser'
             if self.artifact:
                 folder=self.project/'.local/artifacts'/self.artifact
@@ -59,7 +60,7 @@ def serve(args):
         def debug_get(self):
             if not self.debug_guard(self.local_path!='/debug/config'):return
             q=parse_qs(self.query);broker=self.broker
-            if self.local_path=='/debug/config':result={'token':broker.token}
+            if self.local_path=='/debug/config':result={'token':broker.token,'projectId':self.identity}
             elif self.local_path=='/debug/sessions':result={'sessions':broker.list_sessions()}
             elif self.local_path=='/debug/status':result=broker.status(q['session_id'][0]);result['projectId']=self.identity
             elif self.local_path=='/debug/events':result={'events':broker.events(q['session_id'][0],int(q.get('limit',['100'])[0]),int(q.get('after',['-1'])[0]))}
@@ -82,6 +83,11 @@ def serve(args):
         def do_POST(self):
             try:
                 if not self.route():return
+                if self.local_path=='/vmu/a1/phase':
+                    if not self.debug_guard():return
+                    if self.headers.get('Content-Type')!='application/octet-stream' or self.headers.get('Content-Length')!='128':raise ValueError('Expected one 128-byte VMU phase')
+                    q=parse_qs(self.query);tag=self.vmu.write_phase(int(q['block'][0]),int(q['phase'][0]),self.rfile.read(128),self.headers.get('If-Match'))
+                    self.json_reply({'etag':tag});return
                 if self.local_path.startswith('/debug/'):self.debug_post();return
                 if self.local_path!='/diagnostics':self.send_error(404);return
                 if not self.debug_guard(False):return
@@ -92,12 +98,22 @@ def serve(args):
                 agent=str(report.get('userAgent',''))
                 browser='safari' if 'Safari/' in agent and not any(s in agent for s in ('Chrome/','Chromium/','Edg/')) else 'other'
                 (self.project/'.local'/f'browser-startup-{browser}.json').write_text(json.dumps(report,indent=2)+'\n')
+                if report.get('reason') not in ('Runtime initialized','Starting worker runtime'):
+                    (self.project/'.local'/f'browser-fault-{browser}-{time.time_ns()}.json').write_text(json.dumps(report,indent=2)+'\n')
+                    for old in sorted((self.project/'.local').glob('browser-fault-*.json'))[:-10]:old.unlink()
                 self.send_response(204);self.end_headers()
+            except VmuConflict as error:self.json_reply({'error':str(error)},409)
             except TimeoutError as error:self.json_reply({'error':str(error)},408)
             except (ValueError,KeyError,TypeError,UnicodeError) as error:self.json_reply({'error':str(error)},400)
         def do_GET(self):
             try:
                 if not self.route():return
+                if self.local_path=='/vmu/a1.bin':
+                    if not self.debug_guard(False):return
+                    data=self.vmu.load();self.send_bytes(data,'application/octet-stream',{'ETag':etag(data)});return
+                if self.local_path=='/vmu/status':
+                    if not self.debug_guard(False):return
+                    self.json_reply(self.vmu.status());return
                 if self.local_path=='/workspace':
                     if not self.debug_guard(False):return
                     self.json_reply({'projects':workspace.list(),'selected':workspace.describe(self.identity),'artifacts':list_artifacts(self.project),'selectedArtifact':self.artifact});return
@@ -129,12 +145,14 @@ def serve(args):
                 if name in ('index.html','player.html') and target.is_file():
                     info=workspace.describe(self.identity);ready=self.receipt['runnable'] if self.artifact else info['browserReady']
                     data=target.read_text().replace('>Dreamcast game</strong>','>'+html.escape(info['title'])+'</strong>')
-                    data=data.replace('<body ',f'<body data-build-ready="{str(ready).lower()}" ')
+                    data=data.replace('<body ',f'<body data-project-id="{html.escape(self.identity,quote=True)}" data-build-ready="{str(ready).lower()}" ')
                     self.send_bytes(data.encode(),'text/html; charset=utf-8');return
                 self.send_file(target)
             except (ValueError,KeyError,TypeError,UnicodeError,IndexError) as error:self.json_reply({'error':str(error)},400)
-        def send_bytes(self,data,mime):
-            self.send_response(200);self.send_header('Content-Type',mime);self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data)
+        def send_bytes(self,data,mime,headers=None):
+            self.send_response(200);self.send_header('Content-Type',mime);self.send_header('Content-Length',str(len(data)));
+            for key,value in (headers or {}).items():self.send_header(key,value)
+            self.end_headers();self.wfile.write(data)
         def send_file(self,path):
             if not path.is_file():self.send_error(404);return
             # Stream build files rather than buffering large WASM downloads.

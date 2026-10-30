@@ -28,7 +28,7 @@ class Workspace:
     def describe(self,identity):
         project=self.resolve(identity);manifest=read_json(project/'port.json',{});artifacts=list_artifacts(project)
         profile=read_json(project/'title-profile.json',{})
-        required=['loadAddress','runtimeEntry','irqEntry','irqPushRegisters','stackPointer','vectorBase','ramBytes']
+        required=['loadAddress','runtimeEntry','stackPointer','vectorBase','ramBytes']+(['irqEventAddress','irqVectorTableOffset'] if profile.get('irqMode')=='vector-table' else ['irqEntry','irqPushRegisters'])
         missing=[k for k in required if profile.get(k) is None] if not manifest.get('profileId') else []
         return {'id':identity,'title':manifest.get('disc',{}).get('title',identity),'product':manifest.get('disc',{}).get('product'),'state':manifest.get('state','unavailable'),'sourceSetSHA256':manifest.get('sourceSetSHA256'),'executableSHA256':manifest.get('executable',{}).get('sha256'),'evidence':manifest.get('evidence',{}),'missingProfileFields':missing,'url':'/projects/'+identity+'/','browserReady':(project/'.local/browser/game.js').is_file() and (project/'.local/browser/build.json').is_file(),'artifactCount':len(artifacts)}
     def list(self):return [self.describe(e['id']) for e in self.entries()]

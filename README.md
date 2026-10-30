@@ -60,6 +60,7 @@ No game images, BIOS files or extracted assets are included.
 ## Documentation
 
 - [Projects, build history and artifacts](docs/projects.md)
+- [Browser VMU cards and save tools](docs/vmu.md)
 - [Connect an MCP debugger](docs/mcp-debugging.md)
 - [Porting workflow](skills/dreamcast-port/SKILL.md)
 - [Technical reference and development notes](docs/development-notes.md)

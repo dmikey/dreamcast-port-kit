@@ -88,3 +88,4 @@
 0x8C037D90  # callback pointer at 0x8C0ECB10, observed from 0x8C037330
 0x8C045DE8  # callback literal at 0x8C045750, observed from 0x8C0296CE
 0x8C04795C  # callback literal at 0x8C046D0C passed to registration at 0x8C046C1C; observed from 0x8C0296CE
+0x8C03E270  # Save & Load / Enter Name callback at 0x8C09D2B0; observed from 0x8C03AB4C

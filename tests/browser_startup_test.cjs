@@ -10,5 +10,6 @@ f=fixture(function(){});f.node('#start').handlers.click();assert.equal(f.scripts
 f.events.error({message:'Worker failed to load'});assert.match(f.node('#runtime-error').textContent,/Worker failed/);
 f.context.Module.onAbort('wasm stack overflow');assert.match(f.node('#runtime-error').textContent,/wasm stack overflow/);
 f.context.Module.onRuntimeInitialized();assert.equal(f.reports.at(-1).reason,'Runtime initialized');
+f.context.Module.onAbort('RuntimeError: unreachable');assert.equal(f.node('#runtime-error').textContent,'Game stopped: RuntimeError: unreachable');
 f.context.Module.printErr('[PVR2] Shader compile error: unsupported precision');assert.match(f.node('#runtime-error').textContent,/unsupported precision/);
 console.log('Startup contract passed: unsupported graphics, script load, WASM abort, initialization report, shader errors.');

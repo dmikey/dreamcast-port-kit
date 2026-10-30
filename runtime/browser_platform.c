@@ -5,6 +5,7 @@
 #include <emscripten/html5.h>
 #include <GLES3/gl3.h>
 #include <stdio.h>
+#include "frame_timing.h"
 static EMSCRIPTEN_WEBGL_CONTEXT_HANDLE context;
 int platform_init(int width,int height,const char *title) {
     (void)title;EmscriptenWebGLContextAttributes a;
@@ -32,7 +33,10 @@ EM_JS(void,port_save_frame,(void),{
  const canvas=new OffscreenCanvas(w,h);canvas.getContext('2d').putImageData(new ImageData(flipped,w,h),0,0);
  canvas.convertToBlob({type:'image/png'}).then(blob=>blob.arrayBuffer()).then(bytes=>postMessage({kind:'frame',bytes},[bytes]));
 });
-void platform_swap_buffers(void){presentation_count++;if(capture_frame){capture_frame=0;port_save_frame();}glFlush();}
+void platform_swap_buffers(void){presentation_count++;if(capture_frame){capture_frame=0;port_save_frame();}glFlush();
+ static PortFrameTiming timing;
+ if(port_frame_timing(&timing,emscripten_get_now()))printf("[PACING] fps=%.2f p95_ms=%.2f p99_ms=%.2f max_ms=%.2f over20ms=%u\n",timing.fps,timing.p95,timing.p99,timing.maximum,timing.slow);
+}
 void platform_set_title(const char *title){(void)title;}
 uint64_t platform_get_ticks_ms(void){return (uint64_t)emscripten_get_now();}
 uint64_t platform_get_ticks_us(void){return (uint64_t)(emscripten_get_now()*1000.0);}

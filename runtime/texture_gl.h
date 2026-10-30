@@ -105,6 +105,15 @@ static GLuint port_texture(uint32_t tcw,uint32_t tsp) {
     if(paletted)memcpy(port_cache[cached].palette,port_palette+bank,colors*4);
     return tex;
 }
+static uint64_t port_draw_calls;
+static int port_same_material(const PVR2RenderVertex *a,const PVR2RenderVertex *b) {
+    unsigned textured=a->pcw&8;
+    if(textured!=(b->pcw&8) || ((a->isp^b->isp)&0xfc000000u))return 0;
+    /* Only shader/blend flags matter without a texture. Unused address/size
+     * bits often differ between otherwise identical adjacent triangles. */
+    unsigned mask=0xfc1800c0u | (textured?0x0007803fu:0);
+    return !((a->tsp^b->tsp)&mask) && (!textured || a->tcw==b->tcw);
+}
 static void port_draw_materials(const PVR2TriList *list,int list_type) {
     static GLuint shader;static GLint locations[5];
     if(shader!=g_shader){
@@ -118,7 +127,7 @@ static void port_draw_materials(const PVR2TriList *list,int list_type) {
 
     for(int at=0;at<list->count;) {
         const PVR2RenderVertex *v=list->vertices+at;int end=at+3;
-        while(end<list->count && list->vertices[end].tcw==v->tcw && list->vertices[end].tsp==v->tsp && list->vertices[end].pcw==v->pcw && list->vertices[end].isp==v->isp)end+=3;
+        while(end<list->count && port_same_material(v,list->vertices+end))end+=3;
         static const GLenum depth_modes[]={GL_NEVER,GL_LESS,GL_EQUAL,GL_LEQUAL,GL_GREATER,GL_NOTEQUAL,GL_GEQUAL,GL_ALWAYS};
         /* PVR signed-area culling for the expanded triangle-list winding.
          * Flycast gldraw.cpp documents modes 2/3 as negative/positive. */
@@ -137,6 +146,6 @@ static void port_draw_materials(const PVR2TriList *list,int list_type) {
         int values[]={textured,(v->tsp>>6)&3,(v->tsp>>19)&1,(v->tsp>>20)&1,list_type==PVR2_LIST_PUNCHTHRU};
         for(int i=0;i<5;i++)if(values[i]!=uniforms[i]){glUniform1i(locations[i],values[i]);uniforms[i]=values[i];}
         if(textured){GLuint texture=port_texture(v->tcw,v->tsp);if(texture!=last_texture){glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,texture);last_texture=texture;}}
-        glDrawArrays(GL_TRIANGLES,at,end-at);at=end;
+        glDrawArrays(GL_TRIANGLES,at,end-at);port_draw_calls++;at=end;
     }
 }

@@ -1,0 +1,11 @@
+const vm=require('node:vm'),fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+const context=vm.createContext({Uint8Array,DataView});vm.runInContext(fs.readFileSync(path.join(__dirname,'../runtime/web/vmu-format.js'),'utf8')+'\nvar format=portVmuFormat;',context);const format=context.format;
+const card=format.blank(),dv=new DataView(card.buffer),entry=253*512;
+dv.setUint16(254*512,1,true);dv.setUint16(254*512+2,0xfffa,true);card[entry]=0x33;dv.setUint16(entry+2,0,true);card.set(Buffer.from('TESTSAVE'),entry+4);dv.setUint16(entry+24,2,true);card.set(Buffer.from('Synthetic save'),0);card.set(Buffer.from('Port Lab test'),16);card.set(Buffer.from('TEST.APP'),48);
+let info=format.inspect(card);assert.equal(info.freeBlocks,198);assert.equal(info.files[0].name,'TESTSAVE');assert.equal(info.files[0].description,'Synthetic save');assert.equal(info.files[0].application,'TEST.APP');
+let next=format.edit(card,'copy',0);info=format.inspect(next);assert.equal(info.freeBlocks,196);assert.equal(info.files[1].name,'TESTSAVE~2');assert.deepEqual([...format.exportFile(next,0)],[...format.exportFile(next,1)]);assert.equal(format.inspect(card).files.length,1,'editing must preserve the source snapshot');
+next=format.edit(next,'rename',1,'RENAMED');assert.equal(format.inspect(next).files[1].name,'RENAMED');assert.throws(()=>format.edit(next,'rename',1,'TESTSAVE'),/already exists/);assert.throws(()=>format.edit(next,'rename',1,'INVALID/NAME'),/ASCII/);
+next=format.edit(next,'delete',0);assert.equal(format.inspect(next).freeBlocks,198);assert.equal(format.inspect(next).files[0].name,'RENAMED');assert.equal(format.inspect(card).files[0].name,'TESTSAVE');
+const corrupt=card.slice();new DataView(corrupt.buffer).setUint16(254*512,0,true);assert.equal(format.inspect(corrupt).formatted,false);assert.throws(()=>format.edit(corrupt,'delete',0),/circular/);
+assert.throws(()=>format.validate(new Uint8Array(131072)),/unformatted/);assert.throws(()=>format.inspect(new Uint8Array(128)),/128 KiB/);
+console.log('VMU filesystem passed: directory inspection, exact payload export, independent copy, rename, block reclamation and corruption rejection.');

@@ -20,7 +20,7 @@ const timers=new Map();let timerId=0;
 const worker=vm.createContext({performance:{now:()=>123},setTimeout:fn=>{timers.set(++timerId,fn);return timerId;},clearTimeout:id=>timers.delete(id),self,OffscreenCanvas,GL:{offscreenCanvases:{}},postMessage:(message,transfers)=>posted.push({message,transfers}),importScripts:(...names)=>imports.push(names),portBrowserScheduler:{yield:()=>Promise.resolve()}});
 vm.runInContext(read('runtime-worker.js'),worker);
 self.onmessage({data:{kind:'input',values:[8,300,-1,999,-999]}});
-self.onmessage({data:{kind:'start',canvas:new OffscreenCanvas()}});assert.equal(imports.length,1);assert.deepEqual(imports[0],['browser-scheduler.js','game.js']);
+self.onmessage({data:{kind:'start',canvas:new OffscreenCanvas()}});assert.equal(imports.length,1);assert.deepEqual(imports[0],['vmu-format.js','vmu-storage.js','vmu-transport.js','browser-scheduler.js','game.js']);
 worker.Module._port_input=(...values)=>input.push(values);worker.Module.onRuntimeInitialized();assert.deepEqual(input[0],[8,255,0,127,-128]);
 worker.Module.preRun[0]();assert.equal(worker.GL.offscreenCanvases.canvas,worker.Module.canvas);
 const samples=new Float32Array([.25,-.25]);worker.Module.portAudioPush(samples);assert.equal(posted.at(-1).message.samples,samples);assert.equal(posted.at(-1).transfers[0],samples.buffer);

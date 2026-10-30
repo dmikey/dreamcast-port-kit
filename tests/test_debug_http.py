@@ -30,6 +30,19 @@ class DebugHTTPTests(unittest.TestCase):
     self.assertEqual(len(request('/debug/sessions',headers)['sessions']),1)
     with self.assertRaises(HTTPError) as error:request('/debug/register',{'Authorization':'Bearer '+token,'Content-Type':'text/plain'},b'{}')
     self.assertEqual(error.exception.code,400)
+    # VMU writes are authenticated, conditional and persistent on disk.
+    from vmu import VmuStore
+    with urlopen(base+'/vmu/a1.bin') as response:card=response.read();tag=response.headers['ETag']
+    self.assertEqual(len(card),131072)
+    write_headers={'Authorization':'Bearer '+token,'Content-Type':'application/octet-stream','If-Match':tag,'Origin':base}
+    result=request('/vmu/a1/phase?block=10&phase=0',write_headers,b'V'*128)
+    self.assertNotEqual(result['etag'],tag);self.assertEqual(VmuStore(project).load()[5120:5248],b'V'*128)
+    with self.assertRaises(HTTPError) as error:request('/vmu/a1/phase?block=10&phase=0',write_headers,b'X'*128)
+    self.assertEqual(error.exception.code,409);self.assertEqual(VmuStore(project).load()[5120:5248],b'V'*128)
+    with self.assertRaises(HTTPError) as error:request('/vmu/a1/phase?block=256&phase=0',{**write_headers,'If-Match':result['etag']},b'X'*128)
+    self.assertEqual(error.exception.code,400)
+    with self.assertRaises(HTTPError) as error:request('/vmu/a1/phase?block=10&phase=0',{'Content-Type':'application/octet-stream','If-Match':tag},b'X'*128)
+    self.assertEqual(error.exception.code,401)
     # Registry updates are picked up without restarting; discs and tokens stay scoped.
     from workspace import Workspace
     from artifacts import record
@@ -37,6 +50,7 @@ class DebugHTTPTests(unittest.TestCase):
     other=project/'second';(other/'.local').mkdir(parents=True);(other/'port.json').write_text('{"disc":{"title":"Second"},"state":"needs-title-profile"}')
     second_track=other/'track.raw';second_track.write_bytes(b'BBB');(other/'.local/source-lock.json').write_text(json.dumps({'tracks':[{'path':str(second_track)}]}))
     Workspace(project/'.local/workspace.json').add(other,'second');receipt=record(other,'prepare')
+    with urlopen(base+'/projects/second/vmu/a1.bin') as response:self.assertEqual(response.read()[5120:5248],bytes(128))
     catalog=request('/projects/second/workspace');self.assertEqual(len(catalog['projects']),2);self.assertEqual(catalog['selected']['id'],'second');self.assertFalse(catalog['selected']['browserReady'])
     for route,expected in [('/disc/0?offset=0&length=1',b'A'),('/projects/second/disc/0?offset=0&length=1',b'B')]:
      with urlopen(base+route) as response:self.assertEqual(response.read(),expected)

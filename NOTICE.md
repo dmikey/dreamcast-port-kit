@@ -25,6 +25,6 @@ The profile is not a copy of the game's executable or translated game code.
 
 This repository contains tooling, source patches, tests with synthetic fixtures,
 and title-profile metadata. It includes no commercial ROMs, BIOS images,
-extracted game assets, translated game source, compiled game builds or game
-screenshots. Tooling licenses grant no rights to separately supplied game
+extracted game assets, translated game source or compiled game builds.
+The README includes a user-supplied screenshot of the local workbench. Tooling licenses grant no rights to separately supplied game
 content.

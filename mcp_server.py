@@ -16,13 +16,13 @@ Steering=Annotated[float,Field(ge=-1,le=1)]
 
 class WorkspaceClient:
     def __init__(self,project):self.project=Path(project).resolve()
-    def request(self,path,body=None,workspace=False):
+    def request(self,path,body=None,workspace=False,vmu=False):
         connection=json.loads((self.project/'.local/debug-connection.json').read_text())
         parsed=urlsplit(connection['url'])
         if parsed.scheme!='http' or parsed.hostname not in ('127.0.0.1','localhost') or parsed.username or parsed.path or parsed.query or parsed.fragment:raise ValueError('Debug connection must be a loopback HTTP origin')
         base=connection.get('basePath','/')
         if not re.fullmatch(r'/(?:projects/[a-z0-9][a-z0-9-]{0,95}/)?',base):raise ValueError('Invalid project debug scope')
-        request=Request(connection['url']+base+('workspace' if workspace else 'debug/'+path),data=None if body is None else json.dumps(body).encode(),headers={'Authorization':'Bearer '+connection['token'],'Content-Type':'application/json'})
+        request=Request(connection['url']+base+('workspace' if workspace else 'vmu/status' if vmu else 'debug/'+path),data=None if body is None else json.dumps(body).encode(),headers={'Authorization':'Bearer '+connection['token'],'Content-Type':'application/json'})
         try:
             with urlopen(request,timeout=15) as response:return json.load(response)
         except HTTPError as error:
@@ -49,6 +49,18 @@ def create_server(project):
         """List this project's immutable stage receipts, failures and runnable browser snapshots."""
         value=client.request('',workspace=True)
         return {'project':value['selected'],'artifacts':value['artifacts']}
+    @server.tool(annotations=read)
+    def get_vmu_status(session_id:str|None=None)->dict:
+        """Inspect a browser's persistent A1 card and saved files. Native project storage is returned only when no browser is connected."""
+        if session_id:return client.command(session_id,'vmu_status',{})
+        sessions=[s for s in client.request('sessions')['sessions'] if s['connected']]
+        if len(sessions)==1:return client.command(sessions[0]['session_id'],'vmu_status',{})
+        if sessions:raise ValueError('Select a session_id to inspect its browser VMU card')
+        return {'storage':'native-project-file','browserStatusAvailable':False,**client.request('',vmu=True)}
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=False,destructiveHint=True,openWorldHint=False))
+    def manage_vmu_file(session_id:str,action:Literal['copy','rename','delete'],file_index:Annotated[int,Field(ge=0,le=207)],name:Annotated[str|None,Field(max_length=12)]=None)->dict:
+        """Copy, rename or delete a saved file on a stopped workbench card. Every edit preserves a recoverable prior card. Inspect get_vmu_status for file indices first."""
+        return client.command(session_id,'vmu_edit',{'action':action,'index':file_index,'name':name})
     @server.tool(annotations=read)
     def list_sessions()->dict:
         """List local workbench and player sessions, their state and connection status."""

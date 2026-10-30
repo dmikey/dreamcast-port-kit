@@ -6,7 +6,7 @@ BUTTONS={'A':4,'B':2,'X':1024,'Y':512,'Start':8,'Up':16,'Down':32,'Left':64,'Rig
 MODES={'normal':7,'opaque':1,'translucent':4,'no-depth':15}
 
 def validate_command(name,args):
-    fields={'start':set(),'pause':{'paused'},'press_button':{'button','duration_ms'},'drive':{'accelerator','brake','steer','duration_ms'},'render_mode':{'mode'},'capture_frame':set()}
+    fields={'start':set(),'pause':{'paused'},'press_button':{'button','duration_ms'},'drive':{'accelerator','brake','steer','duration_ms'},'render_mode':{'mode'},'capture_frame':set(),'vmu_status':set(),'vmu_edit':{'action','index','name'}}
     if name not in fields or not isinstance(args,dict) or set(args)!=fields[name]:raise ValueError('Unknown command or parameters')
     if name=='pause' and type(args['paused']) is not bool:raise ValueError('paused must be boolean')
     if name=='press_button' and args['button'] not in BUTTONS:raise ValueError('Unknown controller button')
@@ -15,6 +15,10 @@ def validate_command(name,args):
         for key,lo in [('accelerator',0),('brake',0),('steer',-1)]:
             if type(args[key]) not in (int,float) or not lo<=args[key]<=1:raise ValueError('Control values out of range')
     if name=='render_mode' and args['mode'] not in MODES:raise ValueError('Unknown render mode')
+    if name=='vmu_edit':
+        if args['action'] not in ('copy','rename','delete') or type(args['index']) is not int or not 0<=args['index']<208:raise ValueError('Invalid VMU file action or index')
+        if args['name'] is not None and (not isinstance(args['name'],str) or not 1<=len(args['name'])<=12 or any(ord(c)<32 or ord(c)>126 or c in '/\\' for c in args['name'])):raise ValueError('Invalid VMU filename')
+        if args['action']=='rename' and args['name'] is None:raise ValueError('Renaming a save requires a name')
     return copy.deepcopy(args)
 
 class DebugBroker:
@@ -58,7 +62,9 @@ class DebugBroker:
             s=self.sessions[identity];return {'session_id':identity,'view':s['view'],'connected':time.monotonic()-s['seen']<10,'age_seconds':round(time.monotonic()-s['seen'],2),**copy.deepcopy(s['state'])}
     def events(self,identity,limit,after=-1):
         if type(limit) is not int or not 1<=limit<=200:raise ValueError('limit must be 1..200')
-        with self.lock:return copy.deepcopy([e for e in self.sessions[identity]['events'] if e['sequence']>after][-limit:])
+        with self.lock:
+            events=[e for e in self.sessions[identity]['events'] if e['sequence']>after]
+            return copy.deepcopy(events[-limit:] if after<0 else events[:limit])
     def command(self,identity,name,args,timeout=12):
         args=validate_command(name,args)
         with self.lock:

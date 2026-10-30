@@ -22,7 +22,9 @@ def build(args, kit, error, verify, write_json):
         if candidate['id'] == manifest['profileId']: profile = candidate
     if profile is None and (project / 'title-profile.json').exists():
         profile = json.loads((project / 'title-profile.json').read_text())
-    required = ['loadAddress','runtimeEntry','irqEntry','irqPushRegisters','stackPointer','vectorBase','ramBytes']
+    irq_mode=(profile or {}).get('irqMode','direct')
+    if irq_mode not in ('direct','vector-table'):raise error('Unknown IRQ profile mode')
+    required = ['loadAddress','runtimeEntry','stackPointer','vectorBase','ramBytes']+(['irqEventAddress','irqVectorTableOffset'] if irq_mode=='vector-table' else ['irqEntry','irqPushRegisters'])
     missing=[k for k in required if not profile or profile.get(k) is None]
     if missing:
         raise error('Native bring-up requires verified title-profile fields: ' + ', '.join(missing))
@@ -58,31 +60,40 @@ def build(args, kit, error, verify, write_json):
     tracks=lock['tracks']
     if any(t['sectorBytes']!=2352 or t['offset'] for t in tracks):
         raise error('Native BIOS reader currently requires raw 2352-byte tracks with zero byte offset; the disc inspector supports additional formats')
-    pushes=profile['irqPushRegisters']
+    pushes=profile.get('irqPushRegisters',[8])
     if not pushes or any(type(i)!=int or i<0 or i>15 for i in pushes):
         raise error('IRQ push register list must contain explicit register numbers 0..15')
     address=lambda key:int(profile[key],0)
-    for key in ['loadAddress','runtimeEntry','irqEntry','stackPointer','vectorBase']:
+    for key in ['loadAddress','runtimeEntry','stackPointer','vectorBase']+(['irqEventAddress','irqVectorTableOffset'] if irq_mode=='vector-table' else ['irqEntry']):
         if not 0<=address(key)<=0xffffffff or address(key)%2: raise error('Invalid address in title profile: '+key)
     defines={'PORT_TITLE':json.dumps(profile['title']), 'PORT_EXECUTABLE':json.dumps(str(exe)),
         'PORT_RAM_BYTES':str(profile['ramBytes']), 'PORT_LOAD_ADDRESS':profile['loadAddress'],
         'PORT_RUNTIME_ENTRY':profile['runtimeEntry'],'PORT_ENTRY':f"func_{address('runtimeEntry'):08X}",
-        'PORT_IRQ_ENTRY':f"func_{address('irqEntry'):08X}",'PORT_STACK_POINTER':profile['stackPointer'],
+        'PORT_IRQ_VECTOR_TABLE':str(int(irq_mode=='vector-table')),
+       'PORT_IRQ_EVENT_ADDRESS':profile.get('irqEventAddress','0'), 'PORT_IRQ_VECTOR_TABLE_OFFSET':profile.get('irqVectorTableOffset','0'),
+       'PORT_IRQ_ENTRY':f"func_{address('irqEntry'):08X}" if irq_mode=='direct' else 'unused_irq_entry','PORT_STACK_POINTER':profile['stackPointer'],
         'PORT_VECTOR_BASE':profile['vectorBase'],'PORT_SEGA_PATTERN':str(int(profile.get('biosSegaPattern',False))),
         'PORT_IRQ_PUSHES':'{'+','.join(map(str,pushes))+'}',
         'PORT_TRACK_PATHS':'{'+','.join(json.dumps(t['path']) for t in tracks)+'}',
         'PORT_TRACK_LBAS':'{'+','.join(str(t['lba']) for t in tracks)+'}'}
+    from vmu import VmuStore
+    VmuStore(project).load()
+    defines['PORT_VMU_PATH']=json.dumps(str(project/'.local/vmu/a1.bin'))
     (native / 'include/project.h').write_text(''.join(f'#define {k} {v}\n' for k,v in defines.items()))
-    cpu=(core/'src/recompiler/sh4_cpu.c').read_text().replace(
+    import interrupts
+    cpu=interrupts.adapt_cpu((core/'src/recompiler/sh4_cpu.c').read_text()).replace(
         'void sh4_dump_native_stack(const char *tag) { (void)tag; }','/* provided by the port-kit POSIX diagnostic module */')
     (native / 'cpu.c').write_text(cpu)
     sources=sorted((generated/'src').glob('*.c'))+[native/'unresolved.c',native/'cpu.c',
         core/'src/recompiler/sh4_task.c',kit/'runtime/runner.c',kit/'runtime/posix.c']
-    sources+=list((core/'src/hal').glob('*.c'))+[core/'src/platform/platform_sdl2.c']
+    import maple
+    (native/'hardware.c').write_text(maple.adapt((core/'src/hal/dc_hardware.c').read_text()))
+    sources+=[kit/'runtime/vmu.c']
+    sources+=[native/'hardware.c' if p.name=='dc_hardware.c' else p for p in (core/'src/hal').glob('*.c')]+[core/'src/platform/platform_sdl2.c']
     cc=shutil.which('clang') or shutil.which('cc')
     if not cc: raise error('A C11 compiler is required for native bring-up')
     flags=['-std=c11','-O0','-g','-include','time.h','-Wno-unused-value','-Wno-parentheses-equality',
-           '-I',str(native/'include'),'-I',str(generated/'include'),'-I',str(core/'include')]
+           '-I',str(native/'include'),'-I',str(generated/'include'),'-I',str(core/'include'),'-I',str(kit/'runtime')]
     graphic_links=[]
     if getattr(args,'graphics',False):
         config=shutil.which('sdl2-config')
@@ -106,7 +117,7 @@ def build(args, kit, error, verify, write_json):
             graphic_links+=['-lGLEW','-lGL']
     if args.abi: flags+=['-DDCRECOMP_ABI_CHECK']
     objdir=native/'obj';objdir.mkdir(exist_ok=True)
-    headers=b''.join(p.read_bytes() for parent in [native/'include',generated/'include',core/'include'] for p in sorted(parent.rglob('*.h')))
+    headers=b''.join(p.read_bytes() for parent in [native/'include',generated/'include',core/'include',kit/'runtime'] for p in sorted(parent.rglob('*.h')))
     def compile_one(src):
         obj=objdir/(hashlib.sha256(str(src).encode()).hexdigest()[:10]+'_'+src.stem+'.o')
         stamp=obj.with_suffix('.sha')

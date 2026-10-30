@@ -64,7 +64,7 @@ assert(sh4_bios_syscall(&c));assert(memcmp(c.ram+0x6001,"CD001",5)==0);
 return 0;
 }'''
         (path/'bios-test.c').write_text(source)
-        stems={'cpu','sh4_task','arm7','dc_hardware','dc_bios','naomi_io','pvr2_ta','pvr2_render','platform_sdl2','posix'}
+        stems={'cpu','hardware','vmu','sh4_task','arm7','dc_hardware','dc_bios','naomi_io','pvr2_ta','pvr2_render','platform_sdl2','posix'}
         objects=[p for p in (path/'obj').glob('*.o') if p.stem.split('_',1)[1] in stems]
         subprocess.run(['clang','-std=c11','-I',str(toolchain/'include'),str(path/'bios-test.c'),
                         *map(str,objects),'-lm','-o',str(path/'bios-test')],check=True,capture_output=True)

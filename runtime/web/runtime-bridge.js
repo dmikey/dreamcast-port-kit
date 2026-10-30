@@ -13,6 +13,7 @@ class PortWorkerRuntime {
    else if(data.kind==='vram')this.callbacks.vram?.(data.bytes);
    else if(data.kind==='snapshot')this.callbacks.snapshot?.(data.bytes);
    else if(data.kind==='frame')this.callbacks.frame?.(data.bytes);
+   else if(data.kind==='vmu-status'||data.kind==='vmu-lcd')this.callbacks.vmu?.(data);
    else if(data.kind==='audio')this.callbacks.audio(data.samples);
    else if(data.kind==='error')this.callbacks.error(data.message);
   };

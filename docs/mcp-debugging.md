@@ -39,6 +39,8 @@ Call `list_sessions` first and select the intended workbench or player session.
 | Tool | Purpose |
 | --- | --- |
 | `list_projects` | Discover registered local projects and workbench URLs. |
+| `get_vmu_status` | Inspect a browser session's IndexedDB card and saved-file directory. |
+| `manage_vmu_file` | Copy, rename or delete a save on a stopped workbench, with recovery. |
 | `list_artifacts` | Inspect this project's build history and saved receipts. |
 | `list_sessions` | Discover local sessions, connection status and runtime state. |
 | `get_status` | Read readiness, pause, progress, input, audio and build metadata. |

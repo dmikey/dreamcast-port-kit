@@ -4,7 +4,7 @@ import hashlib,json,re,shutil,uuid
 from pathlib import Path
 
 ID=re.compile(r'^[a-z0-9][a-z0-9-]{0,95}$')
-WEB_NAMES={'index.html','player.html','workbench.js','projects.js','debug-bridge.js','browser.js','browser.css','browser-scheduler.js','runtime-bridge.js','runtime-worker.js','audio.js','audio-worklet.js','game.js','build.json'}
+WEB_NAMES={'index.html','player.html','workbench.js','projects.js','debug-bridge.js','browser.js','browser.css','browser-scheduler.js','runtime-bridge.js','runtime-worker.js','vmu-format.js','vmu-storage.js','vmu-transport.js','vmu-ui.js','audio.js','audio-worklet.js','game.js','build.json'}
 def read_json(path,default=None):
     try:return json.loads(Path(path).read_text())
     except FileNotFoundError:return default

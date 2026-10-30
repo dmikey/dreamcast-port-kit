@@ -32,7 +32,10 @@ class DebugBrokerTests(unittest.TestCase):
   for block in range(12):self.broker.poll(self.sid,{},[{'sequence':block*200+i,'message':'x'} for i in range(200)])
   self.assertEqual(len(self.broker.sessions[self.sid]['events']),2048)
   self.assertEqual(self.broker.events(self.sid,1)[0]['sequence'],2399)
+  self.assertEqual([event['sequence'] for event in self.broker.events(self.sid,2,400)],[401,402])
   self.assertEqual((Path(self.temp.name)/'.local/debug-connection.json').stat().st_mode&0o777,0o600)
  def test_rejects_raw_code_unknown_fields_and_unbounded_input(self):
   for name,args in [('eval',{'code':'anything'}),('start',{'code':'x'}),('press_button',{'button':'A','duration_ms':6000}),('press_button',{'button':'Unknown','duration_ms':100}),('drive',{'accelerator':float('nan'),'brake':0,'steer':0,'duration_ms':200}),('pause',{'paused':1})]:
    with self.assertRaises(ValueError):validate_command(name,args)
+  for action,index,name in [('rename',0,None),('copy',208,None),('rename',0,'../save'),('delete',False,None)]:
+   with self.assertRaises(ValueError):validate_command('vmu_edit',{'action':action,'index':index,'name':name})

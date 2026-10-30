@@ -10,7 +10,7 @@ if(typeof self.fetch==='function'&&self.location){
 var Module;let ready=false,started=false,lastInput=null,logs=[],paused=false,resumeWorker=null;
 function flushLogs(){if(logs.length){postMessage({kind:'logs',lines:logs});logs=[];}}
 function log(...parts){if(logs.length<512)logs.push(parts.join(' '));}
-function fail(reason){flushLogs();postMessage({kind:'error',message:String(reason)});}
+function fail(reason){flushLogs();postMessage({kind:'error',message:reason?.stack||String(reason)});}
 let pulseTimer=null,replayTimers=[],benchmarkTimer=null;
 function cancelReplay(){for(const timer of replayTimers)clearTimeout(timer);replayTimers=[];}
 function endPulse(){if(pulseTimer!==null){clearTimeout(pulseTimer);pulseTimer=null;}lastInput=[0,0,0,0,0];applyInput();}
@@ -29,7 +29,7 @@ self.onmessage=event=>{
     portAudioPush:samples=>postMessage({kind:'audio',samples},[samples.buffer]),
     portBrowserYield:async()=>{flushLogs();if(paused)await new Promise(resolve=>resumeWorker=resolve);return portBrowserScheduler.yield();}
    };
-   importScripts('browser-scheduler.js','game.js');
+   importScripts('vmu-format.js','vmu-storage.js','vmu-transport.js','browser-scheduler.js','game.js');
   }catch(error){fail(error.stack||error.message||error);}
  }else if(data.kind==='pause'&&ready){
   paused=!!data.value;if(paused){cancelReplay();endPulse();if(benchmarkTimer!==null){clearTimeout(benchmarkTimer);benchmarkTimer=null;log('[BENCHMARK] cancelled by pause');}}else if(resumeWorker){const resume=resumeWorker;resumeWorker=null;resume();}log('[RUNTIME] '+(paused?'paused':'resumed'));

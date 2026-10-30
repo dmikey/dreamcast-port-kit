@@ -5,7 +5,7 @@ import subprocess,tempfile,unittest
 class TextureTests(unittest.TestCase):
     def test_rgb565_and_palette8888(self):
         source=Path(__file__).resolve().parents[1]/'runtime/texture_gl.h'
-        decoder=source.read_text().split('static void port_draw_materials')[0]
+        decoder=source.read_text().split('static uint64_t port_draw_calls')[0]
         harness='''
 #include <stdint.h>
 #include <assert.h>
