@@ -100,10 +100,6 @@ formats show a diagnostic magenta texture; modifier volumes and full hardware
 render fidelity remain unfinished. Native `build --graphics` is an optional
 SDL2/OpenGL diagnostic; the product target is the browser.
 
-## Browser boot intro
-
-The viewer starts black, then fades to a white Dmikeycast logo with scanlines after Start game. The intro is a page animation, not BIOS execution. Game controls and game audio stay hidden until the eight-second intro and runtime initialization both finish; reduced-motion settings show the completed mark. To add a private boot cue, place `boot-sound.mp3` in the project's ignored `.local/boot/` before publishing browser assets. User audio is not bundled in the kit.
-
 ## Supported disc inputs
 
 | Input | Current support |

@@ -3,16 +3,6 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 import hashlib,json,subprocess,shutil,os,sys
 
-def publish_web_assets(kit,project,output):
-    for name in ('index.html','browser.js','browser.css','boot.js','browser-scheduler.js','runtime-bridge.js','runtime-worker.js','audio.js','audio-worklet.js'):
-        shutil.copyfile(kit/'runtime/web'/name,output/name)
-    # User-supplied boot audio stays private with the local project.
-    sound=project/'.local/boot/boot-sound.mp3'
-    if sound.is_file():
-        shutil.copyfile(sound,output/'boot-sound.mp3')
-        index=output/'index.html'
-        index.write_text(index.read_text().replace('data-boot-sound=""','data-boot-sound="boot-sound.mp3"'))
-
 def publish_bundle(output):
     # Publish the loader only after its content-addressed WASM is complete.
     # A running server must never pair an old loader with a partial new link.
@@ -124,6 +114,6 @@ def build(args,kit,error,verify,write_json):
     (output/'link.log').write_text(result.stdout+result.stderr)
     if result.returncode:raise error('WebAssembly link: '+result.stderr[-2500:])
     publish_bundle(output)
-    publish_web_assets(kit,project,output)
+    for name in ('index.html' ,'browser.js','browser.css','browser-scheduler.js','runtime-bridge.js','runtime-worker.js','audio.js','audio-worklet.js'):shutil.copyfile(kit/'runtime/web'/name,output/name)
     write_json(output/'build.json',{'target':'browser-webgl2','execution':'dedicated-worker-offscreen','optimization':'O2-debug' if args.abi else 'O3-thinlto' if optimized else 'O2','playable':False,'abiChecks':bool(args.abi),'scheduler':'message-channel-8ms','sourceSetSHA256':json.loads((project/'port.json').read_text())['sourceSetSHA256'],'wasmSHA256':hashlib.sha256((output/'game.wasm').read_bytes()).hexdigest()})
     print('Browser build ready. Run serve-browser; gameplay remains unverified.')

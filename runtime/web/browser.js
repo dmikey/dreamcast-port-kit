@@ -1,6 +1,5 @@
 'use strict';
 const status=document.querySelector('#status'),log=document.querySelector('#log');
-const bootIntro=typeof PortBootIntro==='undefined'?null:new PortBootIntro(document.querySelector('.game-stage'));
 // Bounded diagnostic history. Rendering logs is batched outside the hot path.
 class DiagnosticRing {
  constructor(capacity){this.capacity=capacity;this.slots=new Array(capacity);this.total=0;}
@@ -26,11 +25,11 @@ function reportStartup(reason){
  const payload={schemaVersion:1,reason:String(reason).slice(0,1000),userAgent:navigator.userAgent||'',runtimeReady,events:diagnostics.snapshot().slice(-40).map(e=>({kind:e.kind,message:e.message.slice(0,1000)}))};
  fetch('/diagnostics',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).catch(()=>{});
 }
-function startupFailure(reason){bootIntro?.fail();const error=document.querySelector('#runtime-error');error.hidden=false;error.textContent='Game could not start: '+reason;output('[STARTUP] '+reason);reportStartup(reason);}
-var Module={onRuntimeInitialized:()=>{runtimeReady=true;bootIntro?.ready();const pause=document.querySelector('#pause-game');if(pause)pause.disabled=false;reportStartup('Runtime initialized');},canvas:document.querySelector('#canvas'),print:output,printErr:output,setStatus:text=>{if(text)status.textContent=text;},onAbort:reason=>{status.textContent='Execution stopped. See runtime output.';output('Runtime aborted:',reason);}};
+function startupFailure(reason){const error=document.querySelector('#runtime-error');error.hidden=false;error.textContent='Game could not start: '+reason;output('[STARTUP] '+reason);reportStartup(reason);}
+var Module={onRuntimeInitialized:()=>{runtimeReady=true;const pause=document.querySelector('#pause-game');if(pause)pause.disabled=false;reportStartup('Runtime initialized');},canvas:document.querySelector('#canvas'),print:output,printErr:output,setStatus:text=>{if(text)status.textContent=text;},onAbort:reason=>{status.textContent='Execution stopped. See runtime output.';output('Runtime aborted:',reason);}};
 Module.onAbort=reason=>startupFailure(String(reason));
 Module.onExit=code=>{if(code)startupFailure('Runtime exited with code '+code+'. Expand Runtime output for details.');};
-Module.portAudioPush=samples=>{if(!bootIntro?.active&&typeof portAudio!=='undefined')portAudio.push(samples);};
+Module.portAudioPush=samples=>{if(typeof portAudio!=='undefined')portAudio.push(samples);};
 Module.portBrowserYield=()=>typeof portBrowserScheduler!=='undefined'?portBrowserScheduler.yield():new Promise(resolve=>setTimeout(resolve,0));
 document.querySelector('#start').addEventListener('click',()=>{
  if(typeof WebAssembly==='undefined'){startupFailure('This browser does not provide WebAssembly.');return;}
@@ -38,7 +37,6 @@ document.querySelector('#start').addEventListener('click',()=>{
  if(typeof portAudio!=='undefined')portAudio.start().catch(error=>{output('[AUDIO] '+error.message);reportStartup('Audio: '+error.message);});
  if(typeof fetch==='function')fetch('build.json').then(response=>response.json()).then(info=>{buildInfo=info;}).catch(()=>{});
  document.querySelector('#start').disabled=true;status.textContent='Loading worker runtime…';reportStartup('Starting worker runtime');
- bootIntro?.start(typeof portAudio!=='undefined'&&portAudio.muted);
  try{
   workerRuntime=new PortWorkerRuntime(Module.canvas,{ready:()=>Module.onRuntimeInitialized(),log:output,audio:Module.portAudioPush,frame:saveFrame,snapshot:bytes=>saveDownload(bytes,'application/octet-stream','dreamcast-render-snapshot.bin'),vram:bytes=>saveDownload(bytes,'application/octet-stream','dreamcast-vram.bin'),benchmark:result=>{measurements.push(result);output('[BENCHMARK] '+JSON.stringify(result));},error:startupFailure});
   Module._port_button=(bit,pressed)=>workerRuntime.button(bit,pressed);
@@ -65,7 +63,7 @@ function pollController(){
  const other=pads.find(p=>p&&p.connected);
  const name=pad?'Controller connected: '+pad.id:other?'Controller detected; standard mapping unavailable. Use keyboard or touch.':'Controller: connect a gamepad and press a button.';
  if(name!==lastController){controllerStatus.textContent=name;lastController=name;}
- if(inputActive&&!bootIntro?.active){
+ if(inputActive){
   for(const code of keys)bits|=keyButtons[code]||0;
   for(const b of document.querySelectorAll('[data-bit]'))if(touch.has(b))bits|=Number(b.dataset.bit);
   const held=name=>Array.from(touch).some(b=>b.dataset.axis===name);
@@ -147,4 +145,3 @@ let gamePaused=false;
 document.querySelector('#pause-game')?.addEventListener('click',event=>{gamePaused=!gamePaused;workerRuntime?.pause(gamePaused);lastProgress=performance.now();freezeReported=false;event.currentTarget.textContent=gamePaused?'Resume':'Pause';if(typeof portAudio!=='undefined'&&portAudio.context){const action=gamePaused?'suspend':'resume';portAudio.context[action]?.().catch(error=>output('[AUDIO] '+error.message));}});
 
 document.querySelector('#capture-snapshot')?.addEventListener('click',()=>workerRuntime?.snapshot());
-document.querySelector('#mute-audio')?.addEventListener('click',()=>{if(bootIntro?.audio&&typeof portAudio!=='undefined')bootIntro.audio.muted=portAudio.muted;});
