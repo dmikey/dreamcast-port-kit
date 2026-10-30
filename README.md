@@ -11,7 +11,7 @@ used for diagnostics.
 The player requires a modern browser with WebGL 2, WebAssembly, Web Workers and
 WebGL OffscreenCanvas support.
 
-![Dreamcast Port Lab workbench: game preview, inspector and runtime console](docs/images/workbench.png)
+![Dreamcast Port Lab workbench with project selection, Crazy Taxi preview, VMU inspector and runtime console](docs/images/workbench.png)
 
 ## Port Lab
 
