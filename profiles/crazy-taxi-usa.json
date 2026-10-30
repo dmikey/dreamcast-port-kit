@@ -14,5 +14,5 @@
   "codeAliases": [{"start":"0x0c004000", "end":"0x0c008000", "delta":"0xc100"}],
   "entriesFile": "crazy-taxi-usa.entries",
   "status": "runtime-bring-up",
-  "verified": {"titleScreen": false, "driving": false, "audio": false, "deterministicReplay": false, "hostedPlaymos": false}
+  "verified": {"titleScreen": false, "driving": false, "audio": false, "deterministicReplay": false}
 }

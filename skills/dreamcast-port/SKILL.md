@@ -1,6 +1,6 @@
 ---
 name: dreamcast-port
-description: Inspect user-supplied Dreamcast discs, generate local C translations, and bring up native or browser ports using a pinned reusable pipeline with exact executable title profiles. Use for Dreamcast reverse engineering and ports, including Playmos integration.
+description: Inspect user-supplied Dreamcast discs, generate local C translations, and bring up native or browser ports using a pinned reusable pipeline with exact executable title profiles. Use for Dreamcast reverse engineering and ports.
 ---
 
 # Dreamcast Port
@@ -51,7 +51,7 @@ caller-owned words. Read the original call/return convention before "fixing"
 register saves or forcing stack balance. Confirm library initialization and
 disc commands before bypassing a wait or patching a game's error branch.
 
-## Assets, browser and competition
+## Assets and browser validation
 
 Asset adapters belong to title profiles. Validate pointer tables, skeletons,
 texture formats and regions against the input before exporting. Use reversible
@@ -64,12 +64,7 @@ initial texture adapters exist; a finished game still needs their behavior
 and audio/input verified in a browser; compiler installation or
 a WASM file alone is not that evidence.
 
-For a Playmos target, apply the available `playmos-game` skill after there is a
-running gameplay loop. Use current shared SDK contracts, fixed rules and build,
-server-provided run context, bounded tick inputs, trusted replay and authoritative
-results. Browser frame timing and local score checks are not ranked admission.
-
 Record separately: extracted, translated, compiled, original geometry packets,
 title screen, controllable gameplay, audio, browser behavior, deterministic
-replay, and hosted Playmos acceptance. Only mark each demonstrated stage true.
+replay. Only mark each demonstrated stage true.
 Publication and deployment remain separate from local port work.

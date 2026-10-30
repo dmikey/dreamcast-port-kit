@@ -141,15 +141,14 @@ Synthetic fixtures verify pipeline behavior. Real Crazy Taxi has reached its
 startup logos, memory-card notice, title screen and Mode Selection in the
 browser. The current bring-up work addresses additional computed branch targets
 and texture fidelity. Exploratory local frame-rate measurements are not a compatibility or
-performance guarantee. Controllable driving, audible audio,
-deterministic replay and Playmos acceptance remain unverified.
+performance guarantee. Controllable driving, audible audio, and deterministic
+replay remain unverified.
 
-## Browser and Playmos stages
+## Browser validation
 
-Verify the original renderer, asset loading, input and audio in the browser. Keep tests and
-build tool versions pinned. Then integrate current Playmos shared SDK adapters
-and trusted competition verification. The current CLI does not claim those
-unfinished stages are automatic.
+Verify the original renderer, asset loading, input and audio in the browser.
+Keep tests and build tool versions pinned. The current CLI does not claim that
+unfinished validation stages are automatic.
 
 The reusable agent workflow is in `skills/dreamcast-port/SKILL.md`.
 

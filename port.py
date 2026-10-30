@@ -301,7 +301,7 @@ def prepare(args):
                 'sourceSetSHA256':source_set_sha,
                 'state':'inspected' if profile else 'needs-title-profile',
                 'evidence':{'discRead':True, 'translated':False, 'compiled':False, 'bootedToMenu':False,
-                            'playable':False, 'browserPlayable':False, 'deterministicReplay':False, 'playmosAccepted':False}}
+                            'playable':False, 'browserPlayable':False, 'deterministicReplay':False}}
     # Preserve completed-stage evidence on an idempotent import of the same disc.
     if previous_file.exists() and previous.get('sourceSetSHA256') == source_set_sha:
         manifest['evidence'] = previous['evidence']
