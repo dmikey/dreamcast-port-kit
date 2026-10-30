@@ -17,3 +17,7 @@ research/
 *.wasm
 *.o
 *.ppm
+
+# Local captures may contain commercial game audio.
+*.wav
+*.pcm

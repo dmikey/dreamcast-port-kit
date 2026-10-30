@@ -1,5 +1,5 @@
 diff --git a/tools/static_recompile.py b/tools/static_recompile.py
-index e29958c..fc516de 100644
+index e29958c..1894fca 100644
 --- a/tools/static_recompile.py
 +++ b/tools/static_recompile.py
 @@ -29,9 +29,10 @@ def sext12(v):
@@ -123,7 +123,7 @@ index e29958c..fc516de 100644
                      lines.append(f"    {delay_code} /* delay slot */")
                      lines.append(f"    func_{target:08X}(cpu); /* bsr */")
                  elif is_local:
-@@ -1239,10 +1276,25 @@ class SH4Recompiler:
+@@ -1239,27 +1276,45 @@ class SH4Recompiler:
                      lines.append(f"    {code}")
                      lines.append(f"    {delay_code} /* delay slot */")
  
@@ -149,7 +149,13 @@ index e29958c..fc516de 100644
              offset += 2
  
          # Check if function needs fall-through to next function
-@@ -1254,12 +1306,14 @@ class SH4Recompiler:
+         # Find last non-empty code line
+         if next_func_addr is not None:
+             last_code = ""
++            import re
+             for l in reversed(lines):
+-                stripped = l.strip()
++                stripped = re.sub(r'/\*.*?\*/', '', l).strip()
                  if stripped and not stripped.startswith("L_") and stripped != "{":
                      last_code = stripped
                      break
@@ -169,7 +175,7 @@ index e29958c..fc516de 100644
                  lines.append(f"    func_{next_func_addr:08X}(cpu); /* fall-through */")
  
          lines.append("}")
-@@ -1374,10 +1428,11 @@ class SH4Recompiler:
+@@ -1374,10 +1429,11 @@ class SH4Recompiler:
              f.write("    uint32_t lookup = phys | 0x80000000;\n")
              f.write("    void (*fn)(SH4CPU *cpu) = find_function(lookup);\n")
              f.write("    if (!fn) {\n")
@@ -185,7 +191,7 @@ index e29958c..fc516de 100644
              f.write("    }\n")
              f.write("#ifdef DCRECOMP_ABI_CHECK\n")
              f.write("    /* SH-4 keeps r8-r14 callee-saved. A recompiled function\n")
-@@ -1416,6 +1471,7 @@ class SH4Recompiler:
+@@ -1416,6 +1472,7 @@ class SH4Recompiler:
              f.write("            printf(\"[DISPATCH] unresolved call to 0x%08X (pr=0x%08X)\\n\",\n")
              f.write("                   cpu->pc, cpu->pr);\n")
              f.write("        }\n")
@@ -193,7 +199,7 @@ index e29958c..fc516de 100644
              f.write("    }\n")
              f.write("}\n\n")
  
-@@ -1482,12 +1538,16 @@ def main():
+@@ -1482,12 +1539,16 @@ def main():
      positional = []
      base_addr = LOAD_ADDR
      entries = set()
@@ -210,7 +216,7 @@ index e29958c..fc516de 100644
          else:
              positional.append(arg)
  
-@@ -1502,7 +1562,7 @@ def main():
+@@ -1502,7 +1563,7 @@ def main():
      print(f"Binary: {len(data):,} bytes")
      print(f"Base address: 0x{base_addr:08X}")
  

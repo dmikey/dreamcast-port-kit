@@ -118,7 +118,6 @@ changes. Checked-in patches:
 - Bootstrap remaps come from title profiles, not a Crazy Taxi constant.
 - Unresolved dynamic calls trap visibly rather than return as successful no-ops.
 
-This repository is distributed under GPL-2.0; see `LICENSE` and `NOTICE.md`.
 `LICENSE.dcrecomp` and `NOTICE.dcrecomp` retain the upstream GPL-2.0 notices.
 The runtime harness links that core. These tooling licenses do not relicense
 commercial game code or assets produced from a disc.
@@ -140,9 +139,8 @@ and truncation. Compiler execution tests are in `tests/test_recompiler.py`.
 Synthetic fixtures verify pipeline behavior. Real Crazy Taxi has reached its
 startup logos, memory-card notice, title screen and Mode Selection in the
 browser. The current bring-up work addresses additional computed branch targets
-and texture fidelity. Exploratory local frame-rate measurements are not a compatibility or
-performance guarantee. Controllable driving, audible audio, and deterministic
-replay remain unverified.
+and texture fidelity. Local timing improved to a user-reported 54.3 fps after
+browser scheduling and texture-cache fixes. The city and Axel taxi have loaded. Acceleration and steering through the browser overlay and a passenger pickup were observed. Texture/color fidelity remains incomplete. Direct AICA audio mixing and browser playback are implemented. Local browser diagnostics confirmed nonzero source samples reaching a running 48 kHz AudioWorklet; an eight-second 44.1 kHz stereo mixer capture was non-silent with no clipped samples. This confirms the signal path, not hardware-perfect sound. Deterministic replay remains unverified.
 
 ## Browser validation
 
@@ -153,3 +151,87 @@ unfinished validation stages are automatic.
 The reusable agent workflow is in `skills/dreamcast-port/SKILL.md`.
 
 Renderer packet layouts and shading behavior are cross-checked against the [Flycast hardware structures](https://github.com/flyinghead/flycast/blob/master/core/hw/pvr/ta_structs.h) and [GL renderer](https://github.com/flyinghead/flycast/blob/master/core/rend/gles/gles.cpp).
+
+
+Browser input uses the standard HTML Gamepad API (first connected standard-mapped
+controller), keyboard, and a toggleable Dreamcast touch overlay. Left stick and
+D-pad steer, RT accelerates, LT brakes, and face buttons retain Dreamcast mappings.
+Triggers preserve analog values; the stick uses a 15 percent dead zone. Input is
+released on blur, tab hiding, pointer cancellation, and controller disconnect.
+Controller discovery now returns the standard capability definition immediately
+after its function code, including the four analog axes. Verify physical
+controllers on the target browser; isolated mapping tests do not prove a device.
+
+Run `node dreamcast-port-kit/tests/browser_input_test.cjs` from the kit parent directory (or use the
+bundled Emscripten Node runtime). The test resolves the browser source relative to its own location.
+Maple DMA packet tests are included in the Python test suite.
+
+Recent shared fixes cover comment-only fragment endings (preserving fall-through
+and stack cleanup), complete 64-byte modifier-volume packets (stencil shadows
+remain pending), first-volume polygon layouts, per-material depth/blend settings,
+mipmap offsets, and matching the viewport to the browser canvas drawing buffer.
+
+Browser VBlank pacing now uses fractional 60 Hz deadlines and drops stale frame
+debt after stalls. It does not inject virtual disc-time credits into browser
+VBlanks. `test_browser_clock.py` verifies 60 ticks per second and no repeated
+same-time catch-up bursts. Actual game countdown timing still needs a measured
+browser check. Runtime output includes a targeted material capture control for
+investigating the remaining color corruption.
+
+Color type 3 polygon headers reuse the prior intensity face color. They must not
+read new colors from their unused header words. A captured scene showed the
+old behavior taking UV-like values as alpha/red and zeroing blue; a packet
+regression test now checks reused RGB/alpha with deliberately invalid header
+padding. This is a shared TA fix, not a Crazy Taxi asset replacement.
+
+## Flycast WASM reference adaptation
+
+The [nasomers/flycast-wasm technical write-up](https://github.com/nasomers/flycast-wasm/blob/main/TECHNICAL_WRITEUP.md), [validator backend](https://github.com/nasomers/flycast-wasm/blob/main/patches/rec_wasm.cpp), [instrumentation](https://github.com/nasomers/flycast-wasm/blob/main/patches/fly_instrument.h), and [emitter](https://github.com/nasomers/flycast-wasm/blob/main/patches/wasm_emit.h) inform this work. These are design references; its Flycast/SHIL JIT backend is not a drop-in replacement for the kit's ahead-of-time C translator. Performance figures in that project are not measurements of this kit.
+
+| Area | Current implementation | Remaining work |
+| --- | --- | --- |
+| Differential validation | Independent integer/control-flow subset oracle compares actual translated O2 C against synthetic RAM-only programs, including ordered writes. Initial run: 4,096 comparisons, zero differences. A corrupted candidate test confirms mismatch detection. | Full interpreter-backed title snapshots, FPU, PC/dispatch, interrupts, and hardware-aware isolation. The current oracle is not Flycast. |
+| Scheduling | Fractional 60 Hz wall-clock VBlank deadlines, no virtual-disc-time burst; bounded cooperative browser yields. | Guest-cycle accounting and a cycle-denominated debt budget. Current pacing is not cycle-accurate. |
+| Diagnostics | Fixed-capacity browser history, event categories, batched DOM updates, no normal console flood, progress watchdog, downloadable JSON, and targeted render samples. Overflow is explicit. | Structured core IRQ/cycle/DMA events and audio underrun events once audio exists. |
+| Audio | ARM7 driver plus 64-channel PCM16/PCM8/Yamaha ADPCM direct stereo mixer, pitch/loop/key control, amplitude envelopes, pan/master attenuation, and a bounded AudioWorklet queue with device-rate resampling. | DSP effects, filter/LFO modulation, CDDA, and hardware-accurate sample/CPU scheduling. Browser listening and underrun behavior must be verified per title. |
+| Optimization | Existing optimized C/WASM build and exact texture cache. | Validate guarded RAM access, register caching and block merging before enabling them. Include the real production memory path in comparisons. |
+
+Run the reproducible subset validation from the kit's parent directory:
+
+```sh
+python3 dreamcast-port-kit/validation/sh4_subset.py \
+  --toolchain crazy-taxi-port/research/dcrecomp \
+  --seed 1 --programs 32 --cases 128 \
+  --report crazy-taxi-port/portable-project/.local/translation-differential.json
+```
+
+The JSON report enumerates coverage and excluded state. Unsupported oracle
+instructions fail rather than silently passing. Hardware reads/writes are
+excluded by construction; they are not replayed into live devices. A future
+full-state validator must snapshot or journal side effects and report excluded
+blocks by reason. CPU time in competitive rules must stay deterministic;
+audio-buffer rate control must not silently change ranked simulation speed.
+
+## Browser sound
+
+Start game creates/resumes Web Audio in the click gesture. Enable sound retries
+if the browser suspended it; Mute controls listening gain. The runtime synthesizes
+44.1 kHz stereo from the game's own sound RAM and AICA channel registers. The
+AudioWorklet maintains a bounded queue, primes 4,096 source frames, linearly
+resamples to the device rate, and reports underruns/overruns without changing
+game speed. Source blocks are transferred through MessagePort; no shared-memory
+or cross-origin-isolation requirement is added.
+
+Runtime output offers an eight-second WAV capture of actual mixer output and
+JSON diagnostics with nonzero mixer/output frame counts. This is not microphone
+recording. Captures and source game audio must stay private. `NOTICE.audio`
+credits the sound-hardware reference and derived timing tables.
+
+Run `node tests/audio_worklet_test.cjs` inside the kit. Python `test_audio.py`
+checks synthetic PCM16/PCM8, ADPCM vectors, pitch, loops, global key execution,
+stereo routing and master mute under address/undefined-behavior sanitizers.
+A fixture passing does not establish a particular game's music or speech.
+
+The browser shell is named **Dreamcast Port Lab**. Its 4:3 game canvas is
+centered, with page settings below the game and no duplicate page heading or
+startup status paragraph. Fatal diagnostics remain available in Runtime output.

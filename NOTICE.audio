@@ -1,0 +1,13 @@
+The AICA direct mixer in runtime/aica_mixer.h uses register definitions,
+Yamaha ADPCM decoding constants and envelope timing tables from the Flycast
+and reicast sound-generation implementation:
+https://github.com/flyinghead/flycast/blob/master/core/hw/aica/sgc_if.cpp
+
+Copyright the Flycast and reicast contributors. Their source is licensed under
+the GNU General Public License version 2 or (at your option) any later version.
+Some envelope/filter work in that source credits Highly Theoretical by Neill
+Corlett. The kit's mixer is also GPL-2.0-or-later; see LICENSE.dcrecomp.
+
+This kit does not include commercial game audio, sound banks, disc images,
+firmware or generated translations. The sound driver and samples must come
+from the user's local disc.

@@ -100,6 +100,17 @@ cpu.r[2]=2;func_8C010002(&cpu);assert(cpu.r[1]==2 && cpu.r[2]==0);
             'func_8C010000(&cpu);assert(cpu.r[2]==0 && cpu.r[3]==1);cpu.sr=SR_T;func_8C010000(&cpu);assert(cpu.r[2]==1 && cpu.r[3]==1);',
             'void func_8C010008(SH4CPU *cpu){cpu->r[2]++;}\nvoid func_8C010002(SH4CPU *cpu){cpu->r[3]++;}')
 
+    def test_trailing_nop_preserves_fragment_fallthrough(self):
+        words=[0x8903,0xe001,0x0009,0xe102,0x000b,0x0009]
+        compiler=module.SH4Recompiler(struct.pack('<6H',*words),BASE)
+        compiler.entry_hints=set();compiler.mid_entries={}
+        code=compiler.recompile_function(BASE,{'end':BASE+6},next_func_addr=BASE+6)
+        source='#include "recompiler/sh4_cpu.h"\n#include <assert.h>\nvoid func_8C01000A(SH4CPU *c){c->r[2]++;}\nvoid func_8C010006(SH4CPU *c){c->r[3]++;}\n'+code+'\nint main(void){SH4CPU c={0};func_8C010000(&c);assert(c.r[0]==1 && c.r[3]==1);c.sr=SR_T;func_8C010000(&c);assert(c.r[2]==1 && c.r[3]==1);return 0;}'
+        with tempfile.TemporaryDirectory() as temp:
+            p=Path(temp);(p/'test.c').write_text(source)
+            subprocess.run(['clang','-std=c11','-I',str(CORE/'include'),str(p/'test.c'),'-o',str(p/'test')],check=True,capture_output=True)
+            subprocess.run([str(p/'test')],check=True)
+
     def test_inline_branch_table_entries_are_discovered_and_execute(self):
         self.inline_table_case(False)
         self.inline_table_case(True)

@@ -15,7 +15,7 @@ def lower(generated,aliases):
         text=re.sub(r'^void (func_[0-9A-F]{8})\(SH4CPU \*cpu\)',r'void raw_\1(SH4CPU *cpu)',text,flags=re.M)
         text=re.sub(r'func_([0-9A-F]{8})\(cpu\); return;',r'sh4_tail_target = 0x\1u; return;',text)
         text=re.sub(r'func_([0-9A-F]{8})\(cpu\); /\* fall-through \*/',r'sh4_tail_target = 0x\1u; return; /* fall-through */',text)
-        text+='\n'+''.join(f'void {name}(SH4CPU *cpu) {{ uint32_t before=cpu->r[12];raw_{name}(cpu); sh4_drain_tailcalls(cpu);sh4_trace_pointer(cpu,0x{name[5:]}u,before); }}\n' for name in entries)
+        text+='\n'+''.join(f'void {name}(SH4CPU *cpu) {{ uint32_t before=cpu->r[8];raw_{name}(cpu); sh4_drain_tailcalls(cpu);sh4_trace_pointer(cpu,0x{name[5:]}u,before); }}\n' for name in entries)
         p.write_text(text)
     header=Path(generated)/'include/game/game_functions.h'
     text=header.read_text();at=text.rfind('#endif')
@@ -23,7 +23,7 @@ def lower(generated,aliases):
     header.write_text(text)
     path=directory/'dispatch_table.c';text=path.read_text()
     text=text.replace('void sh4_jump_indirect(SH4CPU *cpu) {\n    sh4_call_indirect(cpu);','void sh4_jump_indirect(SH4CPU *cpu) {\n    sh4_tail_target = cpu->pc;')
-    text+='\n#include <stdio.h>\nvoid sh4_trace_pointer(SH4CPU *cpu,uint32_t address,uint32_t before) {\n#ifdef DCRECOMP_ABI_CHECK\nstatic int logs; if(before>=0x0c010000 && before<0x8c180000 && cpu->r[12]<0x10000 && logs++<60)fprintf(stderr,\"[REGISTER] %08X r12 %08X -> %08X sp=%08X\\n\",address,before,cpu->r[12],cpu->r[15]);\n#endif\n}\nuint32_t sh4_tail_target;\nstatic const FuncEntry raw_table[]={\n'
+    text+='\n#include <stdio.h>\nvoid sh4_trace_pointer(SH4CPU *cpu,uint32_t address,uint32_t before) {\n#ifdef DCRECOMP_ABI_CHECK\nstatic int logs; if(before>=0x0c010000 && before<0x8c180000 && cpu->r[8]<0x10000 && logs++<60)fprintf(stderr,\"[REGISTER] %08X r8 %08X -> %08X sp=%08X\\n\",address,before,cpu->r[8],cpu->r[15]);\n#endif\n}\nuint32_t sh4_tail_target;\nstatic const FuncEntry raw_table[]={\n'
     text+=''.join(f'{{0x{name[5:]}u,raw_{name}}},\n' for name in sorted(names))+'};\n'
     text+='''void sh4_drain_tailcalls(SH4CPU *cpu) {
 while(sh4_tail_target) {

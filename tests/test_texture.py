@@ -45,6 +45,8 @@ int main(void) {
     port_begin_textures();port_texture(6u<<27,0);assert(uploads==2);
     palette[0]=0xffaabbcc;port_begin_textures();port_texture(6u<<27,0);assert(uploads==3 && port_texels[0]==0xaa);
     ram[0]=1;palette[1]=0xff123456;port_begin_textures();port_texture(6u<<27,0);assert(uploads==4 && port_texels[0]==0x12);
+    memset(ram,0,sizeof ram);ram[48]=0;ram[49]=0xf8;port_begin_textures();port_texture((1u<<31)|(1u<<27),0);assert(port_texels[0]==255 && port_texels[1]==0);
+    memset(ram,0,sizeof ram);ram[24]=1;palette[0]=0;palette[1]=0xff123456;port_begin_textures();port_texture((1u<<31)|(6u<<27),0);assert(port_texels[0]==0x12 && port_texels[3]==255);
     return 0;
 }
 '''

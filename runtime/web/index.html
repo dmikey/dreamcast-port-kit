@@ -1,1 +1,21 @@
-<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dreamcast · Browser boot</title><link rel="stylesheet" href="browser.css"><header><strong>DREAMCAST PORT KIT</strong><span>LOCAL BROWSER BUILD</span></header><main><h1>Original game. Browser runtime.</h1><p id="status" role="status">Ready to start. This is an unverified boot test.</p><button id="start">Start game</button><canvas id="canvas" width="640" height="480" tabindex="0" aria-label="Game display"></canvas><div class="pad"><button data-bit="8">Start / Enter</button><button data-bit="4">A / Z</button><button data-bit="2">B / X</button></div><p>Enter: Start · Z / X: A / B · A / S: X / Y · Arrow keys: direction · Q / W: triggers</p><details><summary>Runtime output</summary><pre id="log"></pre></details></main><script src="browser.js"></script></html>
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Dreamcast Port Lab</title><link rel="stylesheet" href="browser.css">
+<header><strong>DREAMCAST PORT LAB</strong><span>LOCAL BROWSER BUILD</span></header><main>
+<p id="status" role="status" hidden></p>
+<div class="game-stage"><canvas id="canvas" width="640" height="480" tabindex="0" aria-label="Game display"></canvas>
+<div id="touch-pad" aria-label="Dreamcast touch controller">
+<button class="trigger trigger-l" data-axis="brake" aria-label="L trigger: brake">L <small>BRAKE</small></button>
+<button class="trigger trigger-r" data-axis="gas" aria-label="R trigger: accelerate">R <small>ACCELERATE</small></button>
+<div id="stick" role="group" aria-label="Analog steering stick"><span></span></div>
+<div class="dpad"><button class="up" data-bit="16" aria-label="D-pad up">▲</button><button class="left" data-bit="64" aria-label="D-pad left">◀</button><button class="right" data-bit="128" aria-label="D-pad right">▶</button><button class="down" data-bit="32" aria-label="D-pad down">▼</button></div>
+<div class="face-buttons"><button class="face y" data-bit="512" aria-label="Y button">Y</button><button class="face x" data-bit="1024" aria-label="X button">X</button><button class="face b" data-bit="2" aria-label="B button: drive">B</button><button class="face a" data-bit="4" aria-label="A button: reverse">A</button></div>
+<button class="start-button" data-bit="8" aria-label="Start button">START</button>
+</div></div>
+<div class="page-controls" aria-label="Game settings">
+<div class="toolbar"><button id="start">Start game</button><button id="toggle-pad" aria-pressed="true">On-screen controls: on</button></div>
+<div class="toolbar"><span id="audio-status" role="status">Sound: off</span><button id="enable-audio">Enable sound</button><button id="mute-audio">Mute</button></div>
+</div>
+<p id="controller" role="status">Controller: connect a gamepad and press a button.</p>
+<p>Left stick: steer · RT: accelerate · LT: brake · B: drive · A: reverse</p>
+<p>Keyboard: Enter: Start · Z/X: A/B · A/S: X/Y · Arrow keys: steer / menus · Q/W: brake / accelerate</p>
+<details><summary>Runtime output</summary><pre id="log"></pre><button id="download-diagnostics">Download diagnostics</button><button id="capture-render">Capture render samples</button><button id="capture-audio">Capture 8 seconds of game audio</button><pre id="render-log" aria-label="First-frame material samples"></pre></details></main><script src="audio.js"></script><script src="browser.js"></script></html>

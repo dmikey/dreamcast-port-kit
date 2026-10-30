@@ -27,8 +27,10 @@ static GLuint port_texture(uint32_t tcw,uint32_t tsp) {
     int paletted=fmt==5 || fmt==6;
     if(paletted){linear=0;vq=0;}
     unsigned palette_format=port_palette_format;
+    if(linear && !vq)mip=0;
+    if(mip)h=w;
     unsigned offset=0;
-    if(mip) {if(vq){offset=1;for(unsigned s=2;s<w;s*=2)offset+=(s/2)*(s/2);}else{offset=6;for(unsigned s=2;s<w;s*=2)offset+=s*s*2;}}
+    if(mip) {if(vq){offset=1;for(unsigned s=2;s<w;s*=2)offset+=(s/2)*(s/2);}else{unsigned pixels=4;for(unsigned s=2;s<w;s*=2)pixels+=s*s;offset=paletted?(fmt==5?pixels/2:pixels):pixels*2;}}
     const unsigned char *vram=sh4_get_vram_ptr();
     unsigned length=vq?2048+offset+w*h/4:offset+(paletted?(fmt==5?w*h/2:w*h):w*h*2);
     unsigned bank=fmt==5?((tcw>>21)&63)*16:((tcw>>25)&3)*256;
@@ -53,8 +55,8 @@ static GLuint port_texture(uint32_t tcw,uint32_t tsp) {
         if(paletted) {
             unsigned index=port_twiddle(x,y,w,h);
             unsigned entry;
-            if(fmt==5) {unsigned packed=vram[(base+index/2)&0x7fffff];entry=((packed>>((index&1)*4))&15)+((tcw>>21)&63)*16;}
-            else entry=vram[(base+index)&0x7fffff]+((tcw>>25)&3)*256;
+            if(fmt==5) {unsigned packed=vram[(base+offset+index/2)&0x7fffff];entry=((packed>>((index&1)*4))&15)+((tcw>>21)&63)*16;}
+            else entry=vram[(base+offset+index)&0x7fffff]+((tcw>>25)&3)*256;
             p=port_palette[entry];pf=palette_format;
         }
         if(pf==0){out[0]=((p>>10)&31)*255/31;out[1]=((p>>5)&31)*255/31;out[2]=(p&31)*255/31;out[3]=(p&0x8000)?255:0;}
@@ -66,8 +68,8 @@ static GLuint port_texture(uint32_t tcw,uint32_t tsp) {
     if(!port_cache[cached].id)glGenTextures(1,&port_cache[cached].id);
     GLuint tex=port_cache[cached].id;glBindTexture(GL_TEXTURE_2D,tex);
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,(tsp&(1<<15))?GL_CLAMP_TO_EDGE:(tsp&(1<<17))?GL_MIRRORED_REPEAT:GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,(tsp&(1<<16))?GL_CLAMP_TO_EDGE:(tsp&(1<<18))?GL_MIRRORED_REPEAT:GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,(tsp&(1<<16))?GL_CLAMP_TO_EDGE:(tsp&(1<<18))?GL_MIRRORED_REPEAT:GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,(tsp&(1<<15))?GL_CLAMP_TO_EDGE:(tsp&(1<<17))?GL_MIRRORED_REPEAT:GL_REPEAT);
     glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,w,h,0,GL_RGBA,GL_UNSIGNED_BYTE,port_texels);
     free(port_cache[cached].source);port_cache[cached].source=malloc(length);
     if(!port_cache[cached].source)abort();
@@ -82,7 +84,15 @@ static GLuint port_texture(uint32_t tcw,uint32_t tsp) {
 static void port_draw_materials(const PVR2TriList *list,int list_type) {
     for(int at=0;at<list->count;) {
         const PVR2RenderVertex *v=list->vertices+at;int end=at+3;
-        while(end<list->count && list->vertices[end].tcw==v->tcw && list->vertices[end].tsp==v->tsp && list->vertices[end].pcw==v->pcw)end+=3;
+        while(end<list->count && list->vertices[end].tcw==v->tcw && list->vertices[end].tsp==v->tsp && list->vertices[end].pcw==v->pcw && list->vertices[end].isp==v->isp)end+=3;
+        static const GLenum depth_modes[]={GL_NEVER,GL_LESS,GL_EQUAL,GL_LEQUAL,GL_GREATER,GL_NOTEQUAL,GL_GEQUAL,GL_ALWAYS};
+        glDepthFunc(depth_modes[(v->isp>>29)&7]);
+        glDepthMask((list_type==PVR2_LIST_TRANS || (v->isp&(1u<<26)))?GL_FALSE:GL_TRUE);
+        if(list_type==PVR2_LIST_TRANS){
+            static const GLenum src_modes[]={GL_ZERO,GL_ONE,GL_DST_COLOR,GL_ONE_MINUS_DST_COLOR,GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA,GL_DST_ALPHA,GL_ONE_MINUS_DST_ALPHA};
+            static const GLenum dst_modes[]={GL_ZERO,GL_ONE,GL_SRC_COLOR,GL_ONE_MINUS_SRC_COLOR,GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA,GL_DST_ALPHA,GL_ONE_MINUS_DST_ALPHA};
+            glBlendFunc(src_modes[v->tsp>>29],dst_modes[(v->tsp>>26)&7]);
+        }
         int textured=(v->pcw>>3)&1;
         glUniform1i(glGetUniformLocation(g_shader,"uTextured"),textured);
         glUniform1i(glGetUniformLocation(g_shader,"uShading"),(v->tsp>>6)&3);

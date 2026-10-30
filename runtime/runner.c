@@ -17,6 +17,10 @@ EMSCRIPTEN_KEEPALIVE void port_button(unsigned bit,int pressed) {
     MapleController *c=dc_maple_get_controller(sh4_get_hardware(),0);
     if(c) {if(pressed)c->buttons &= ~bit;else c->buttons |= bit;}
 }
+EMSCRIPTEN_KEEPALIVE void port_axes(int left,int right,int x,int y) {
+    MapleController *c=dc_maple_get_controller(sh4_get_hardware(),0);
+    if(c) {c->ltrig=left;c->rtrig=right;c->joyx=x;c->joyy=y;}
+}
 #endif
 
 void port_runtime_trace(void) {
