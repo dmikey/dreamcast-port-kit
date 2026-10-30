@@ -4,6 +4,7 @@
 .pad{flex-wrap:wrap}.pad button[aria-pressed="true"]{background:#b6f4b6;color:#0c1e12}
 
 .page-controls{margin:20px auto 0;max-width:800px}.toolbar{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap}.toolbar #toggle-pad{background:#24364a;color:#fff}.toolbar #audio-status{margin:0 4px 20px 0}main>p{text-align:center}
+#runtime-error{max-width:760px;margin:0 auto 20px;padding:16px 20px;border:1px solid #e9a09c;border-radius:10px;background:#371b21;color:#ffddd9;overflow-wrap:anywhere}
 .game-stage{position:relative;width:min(100%,800px);margin-inline:auto;user-select:none;-webkit-user-select:none}canvas{width:100%;box-sizing:border-box}
 #touch-pad{position:absolute;inset:0;pointer-events:none;container-type:inline-size}
 #touch-pad[hidden]{display:none}#touch-pad button,#stick{pointer-events:auto;touch-action:none;-webkit-tap-highlight-color:transparent}

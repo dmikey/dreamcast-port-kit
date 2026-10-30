@@ -16,12 +16,26 @@ function output(...parts){
  if(text.includes('[FRAME]')||text.includes('[HEARTBEAT]')){lastProgress=now;freezeReported=false;}
  if(text.includes('[DISPATCH] unresolved')||text.includes('[UNIMPLEMENTED]')){status.textContent='Execution stopped: '+text;flushLog();}
  if(text.includes('entering title code'))status.textContent='Running original game code. Local development build.';
+ if(!text.startsWith('[STARTUP]')&&(/\[PVR2\] Shader (compile|link) error/.test(text)||/\[PLATFORM\].*failed:/.test(text)))startupFailure(text);
 }
 setInterval(()=>{flushLog();if(runtimeReady&&lastProgress&&!freezeReported&&performance.now()-lastProgress>4000){freezeReported=true;output('[WATCHDOG] No execution progress for 4 seconds.');}},250);
 let runtimeReady=false;
-var Module={onRuntimeInitialized:()=>{runtimeReady=true;},canvas:document.querySelector('#canvas'),print:output,printErr:output,setStatus:text=>{if(text)status.textContent=text;},onAbort:reason=>{status.textContent='Execution stopped. See runtime output.';output('Runtime aborted:',reason);}};
+function reportStartup(reason){
+ if(typeof fetch!=='function')return;
+ const payload={schemaVersion:1,reason:String(reason).slice(0,1000),userAgent:navigator.userAgent||'',runtimeReady,events:diagnostics.snapshot().slice(-40).map(e=>({kind:e.kind,message:e.message.slice(0,1000)}))};
+ fetch('/diagnostics',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).catch(()=>{});
+}
+function startupFailure(reason){const error=document.querySelector('#runtime-error');error.hidden=false;error.textContent='Game could not start: '+reason;output('[STARTUP] '+reason);reportStartup(reason);}
+var Module={onRuntimeInitialized:()=>{runtimeReady=true;reportStartup('Runtime initialized');},canvas:document.querySelector('#canvas'),print:output,printErr:output,setStatus:text=>{if(text)status.textContent=text;},onAbort:reason=>{status.textContent='Execution stopped. See runtime output.';output('Runtime aborted:',reason);}};
+Module.onAbort=reason=>startupFailure(String(reason));
+Module.onExit=code=>{if(code)startupFailure('Runtime exited with code '+code+'. Expand Runtime output for details.');};
 Module.portAudioPush=samples=>{if(typeof portAudio!=='undefined')portAudio.push(samples);};
-document.querySelector('#start').addEventListener('click',()=>{if(typeof portAudio!=='undefined')portAudio.start().catch(error=>output('[AUDIO] '+error.message));document.querySelector('#start').disabled=true;status.textContent='Loading browser runtime…';const script=document.createElement('script');script.src='game.js';document.body.append(script);Module.canvas.focus();});
+document.querySelector('#start').addEventListener('click',()=>{
+ if(typeof WebAssembly==='undefined'){startupFailure('This browser does not provide WebAssembly.');return;}
+ if(typeof WebGL2RenderingContext==='undefined'){startupFailure('WebGL 2 is unavailable. Check Safari’s graphics settings.');return;}
+ if(typeof portAudio!=='undefined')portAudio.start().catch(error=>{output('[AUDIO] '+error.message);reportStartup('Audio: '+error.message);});
+ document.querySelector('#start').disabled=true;status.textContent='Loading browser runtime…';reportStartup('Starting runtime');const script=document.createElement('script');script.src='game.js';script.addEventListener('error',()=>startupFailure('The game runtime script could not load.'));document.body.append(script);Module.canvas.focus();
+});
 
 // One browser input owner combines keyboard, touch and the standard Gamepad API.
 const keys=new Set(),touch=new Set();
@@ -66,7 +80,7 @@ function controllerFrame(){
  requestAnimationFrame(controllerFrame);
 }
 function release(){resetStick();inputActive=false;keys.clear();touch.clear();for(const b of document.querySelectorAll('[aria-pressed]'))b.setAttribute('aria-pressed','false');if(runtimeReady&&Module._port_axes){Module._port_axes(0,0,0,0);for(const bit of gameBits)Module._port_button(bit,0);}}
-window.addEventListener('keydown',event=>{if(keyButtons[event.code]||['KeyQ','KeyW'].includes(event.code)){event.preventDefault();keys.add(event.code);}});
+window.addEventListener('keydown',event=>{if(keyButtons[event.code]||['KeyQ','KeyW'].includes(event.code)){event.preventDefault();inputActive=true;keys.add(event.code);}});
 window.addEventListener('keyup',event=>keys.delete(event.code));
 window.addEventListener('blur',release);window.addEventListener('focus',()=>inputActive=true);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)release();else inputActive=document.hasFocus();});
@@ -80,7 +94,8 @@ for(const button of document.querySelectorAll('[data-bit],[data-axis]')){
 }
 requestAnimationFrame(controllerFrame);
 
-window.addEventListener('error',event=>{status.textContent='Execution stopped. See runtime output.';output(event.message);});
+window.addEventListener('error',event=>startupFailure(event.message||'A browser script failed.'));
+window.addEventListener('unhandledrejection',event=>startupFailure(String(event.reason)));
 
 const stickElement=document.querySelector('#stick'),stickKnob=stickElement.querySelector('span');
 function resetStick(){stickX=0;stickY=0;stickPointer=null;if(stickKnob)stickKnob.style.transform='translate(0,0)';}

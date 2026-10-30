@@ -3,6 +3,15 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 import hashlib,json,subprocess,shutil,os,sys
 
+def adapt_platform(source):
+    source=source.replace('#include <SDL_opengl.h>','#include <GLES3/gl3.h>\n#include <emscripten.h>')
+    source=source.replace('SDL_GL_CONTEXT_MINOR_VERSION, 3','SDL_GL_CONTEXT_MINOR_VERSION, 0').replace('SDL_GL_CONTEXT_PROFILE_CORE','SDL_GL_CONTEXT_PROFILE_ES')
+    source=source.replace('case SDL_KEYUP: {','case SDL_KEYUP: { break; /* Browser JS owns combined keyboard/gamepad input. */')
+    source=source.replace('SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER','SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER') # Web Audio owns sound; SDL audio must not gate video startup.
+    clock='    static Uint64 freq;\n    if (!freq) freq = SDL_GetPerformanceFrequency();\n    return (uint64_t)((SDL_GetPerformanceCounter() * 1000000) / freq);'
+    if clock not in source:raise ValueError('Pinned SDL microsecond clock adapter no longer matches')
+    return source.replace(clock,'    return (uint64_t)(emscripten_get_now() * 1000.0);')
+
 def build(args,kit,error,verify,write_json):
     import native
     os.environ['PATH']=str(Path(sys.executable).parent)+os.pathsep+os.environ.get('PATH','')
@@ -31,9 +40,9 @@ def build(args,kit,error,verify,write_json):
     renderer='#include <emscripten/html5.h>\n'+renderer
     renderer=renderer.replace('void pvr2_render_frame(void) {', 'void pvr2_render_frame(void) {\n    int canvas_width,canvas_height;emscripten_get_canvas_element_size("#canvas",&canvas_width,&canvas_height);glViewport(0,0,canvas_width,canvas_height);')
     (output/'renderer.c').write_text(renderer)
-    layer=(core/'src/platform/platform_sdl2.c').read_text().replace('#include <SDL_opengl.h>','#include <GLES3/gl3.h>\n#include <emscripten.h>')
-    layer=layer.replace('SDL_GL_CONTEXT_MINOR_VERSION, 3','SDL_GL_CONTEXT_MINOR_VERSION, 0').replace('SDL_GL_CONTEXT_PROFILE_CORE','SDL_GL_CONTEXT_PROFILE_ES')
-    layer=layer.replace('case SDL_KEYUP: {', 'case SDL_KEYUP: { break; /* Browser JS owns combined keyboard/gamepad input. */')
+    # SDL's nanosecond counter * 1,000,000 can overflow before division.
+    # Use the browser's monotonic millisecond clock directly, including long sessions.
+    layer=adapt_platform((core/'src/platform/platform_sdl2.c').read_text())
     # The CPU budget yields regularly; yielding again at every hardware poll
     # adds browser timer delays and slows the emulated game's clock.
     (output/'platform.c').write_text(layer)

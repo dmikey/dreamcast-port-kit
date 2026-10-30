@@ -212,6 +212,11 @@ full-state validator must snapshot or journal side effects and report excluded
 blocks by reason. CPU time in competitive rules must stay deterministic;
 audio-buffer rate control must not silently change ranked simulation speed.
 
+The browser adapter uses Emscripten's monotonic clock directly for microsecond
+timestamps, avoiding overflow in SDL performance-counter multiplication during
+long browser sessions. Audio work is bounded after stalls; discarded time is
+reported in diagnostics rather than mixed in an unbounded burst.
+
 ## Browser sound
 
 Start game creates/resumes Web Audio in the click gesture. Enable sound retries
@@ -235,3 +240,18 @@ A fixture passing does not establish a particular game's music or speech.
 The browser shell is named **Dreamcast Port Lab**. Its 4:3 game canvas is
 centered, with page settings below the game and no duplicate page heading or
 startup status paragraph. Fatal diagnostics remain available in Runtime output.
+
+## Safari startup diagnostics
+
+Mac Safari compatibility is still unverified. Startup checks report missing
+WebAssembly/WebGL 2, script-load errors, WASM aborts and shader failures in a
+visible error banner. Ordinary startup text stays hidden. The loopback dev
+server accepts a bounded same-origin diagnostic POST and stores one local
+report per browser family under the project `.local/` folder. These reports
+include the user-agent, failure and last 40 log entries; they are not uploaded
+externally or served as page assets. Restart an older dev server to enable the
+endpoint. SDL audio initialization is disabled in browser builds because the
+separate Web Audio path owns sound; an audio initialization failure does not
+prevent loading the game.
+
+`node tests/browser_startup_test.cjs` checks the startup/error contract.

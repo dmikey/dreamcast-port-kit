@@ -8,6 +8,23 @@ def serve(args):
     project=Path(args.project).resolve();root=project/'.local/browser'
     tracks=json.loads((project/'.local/source-lock.json').read_text())['tracks']
     class Handler(SimpleHTTPRequestHandler):
+        def do_POST(self):
+            if self.path!='/diagnostics':self.send_error(404);return
+            origin=self.headers.get('Origin')
+            if origin and origin not in (f'http://127.0.0.1:{args.port}',f'http://localhost:{args.port}'):
+                self.send_error(403);return
+            try:
+                size=int(self.headers.get('Content-Length','0'))
+                if not 0<size<=49152:raise ValueError()
+                report=json.loads(self.rfile.read(size))
+                if not isinstance(report,dict) or report.get('schemaVersion')!=1:raise ValueError()
+                agent=str(report.get('userAgent',''))
+                browser='safari' if 'Safari/' in agent and not any(s in agent for s in ('Chrome/','Chromium/','Edg/')) else 'other'
+                # Bounded local diagnostics only; never served as public browser assets.
+                destination=project/'.local'/f'browser-startup-{browser}.json'
+                destination.write_text(json.dumps(report,indent=2)+'\n')
+                self.send_response(204);self.end_headers()
+            except (ValueError,TypeError,UnicodeError):self.send_error(400)
         def do_GET(self):
             url=urlsplit(self.path)
             if url.path.startswith('/disc/'):
