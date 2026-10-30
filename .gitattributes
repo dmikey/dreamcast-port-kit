@@ -1,0 +1,3 @@
+*.patch whitespace=-trailing-space
+/LICENSE whitespace=-blank-at-eof
+/LICENSE.dcrecomp whitespace=-blank-at-eof

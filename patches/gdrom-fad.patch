@@ -1,0 +1,29 @@
+diff --git a/src/hal/dc_bios.c b/src/hal/dc_bios.c
+index b356e4c..62fce21 100644
+--- a/src/hal/dc_bios.c
++++ b/src/hal/dc_bios.c
+@@ -242,8 +242,11 @@ static int gdc_exec(SH4CPU *cpu, uint32_t cmd, uint32_t param) {
+     switch (cmd) {
+     case GDC_CMD_PIOREAD:
+     case GDC_CMD_DMAREAD: {
+-        /* param -> { lba, count, buffer, ... } */
+-        uint32_t lba   = sh4_read32(cpu, param);
++        /* BIOS commands use FAD (absolute frames); GDI tracks use LBA.
++         * The 150-frame lead-in must be removed exactly once here. */
++        uint32_t fad   = sh4_read32(cpu, param);
++        if (fad < 150) return -1;
++        uint32_t lba = fad - 150;
+         uint32_t count = sh4_read32(cpu, param + 4);
+         uint32_t dest  = sh4_read32(cpu, param + 8);
+         { static unsigned long n = 0, sectors = 0;
+@@ -271,8 +274,8 @@ static int gdc_exec(SH4CPU *cpu, uint32_t cmd, uint32_t param) {
+             if (out) {
+                 for (int i = 0; i < 99; i++)
+                     sh4_write32(cpu, out + i * 4, 0xFFFFFFFFu);
+-                sh4_write32(cpu, out + 0, 0x41000000u | g_disc_start_lba);
+-                sh4_write32(cpu, out + 99 * 4, 0x41000000u | g_disc_start_lba);
++                sh4_write32(cpu, out + 0, 0x41000000u | (g_disc_start_lba + 150));
++                sh4_write32(cpu, out + 99 * 4, 0x41000000u | (g_disc_start_lba + 150));
+             }
+         }
+         return 0;

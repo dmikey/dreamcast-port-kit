@@ -1,0 +1,14 @@
+{
+  "repository": "https://github.com/sp00nznet/dcrecomp.git",
+  "commit": "3c60e6f03cbbaaabeaa1f3165247ed3120f23c3e",
+  "patches": [
+    "sh4-delay-slots.patch",
+    "sh4-irq-state.patch",
+    "gdrom-fad.patch"
+  ],
+  "patchedSourceSHA256": {
+    "tools/static_recompile.py": "a9f05af1e090822e7bbfeb92b6eccd3833633f59154c30aa7fc3bd29c70cbe08",
+    "src/recompiler/sh4_cpu.c": "b58e9afdc4740b2348ea7ddbda6d5782bed99b6385046aa9493a731cc4037aab",
+    "src/hal/dc_bios.c": "2a406a32669f0ec9fb4c81c2c2f2fab33f035b544326da186823ae984fb48abf"
+  }
+}

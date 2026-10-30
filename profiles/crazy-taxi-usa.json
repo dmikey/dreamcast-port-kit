@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "crazy-taxi-usa-v1004",
+  "title": "Crazy Taxi",
+  "executableSHA1": "8b5bd2a2380799e4e1de46cf801c352fd90c2f3e",
+  "loadAddress": "0x8c010000",
+  "runtimeEntry": "0x8c148962",
+  "irqEntry": "0x8c16a59e",
+  "irqPushRegisters": [14, 13, 12, 11, 10, 9, 8],
+  "stackPointer": "0x8c00fc00",
+  "vectorBase": "0x8c00f400",
+  "ramBytes": 16777216,
+  "biosSegaPattern": true,
+  "codeAliases": [{"start":"0x0c004000", "end":"0x0c008000", "delta":"0xc100"}],
+  "entriesFile": "crazy-taxi-usa.entries",
+  "status": "runtime-bring-up",
+  "verified": {"titleScreen": false, "driving": false, "audio": false, "deterministicReplay": false, "hostedPlaymos": false}
+}

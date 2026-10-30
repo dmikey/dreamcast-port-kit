@@ -1,0 +1,221 @@
+diff --git a/tools/static_recompile.py b/tools/static_recompile.py
+index e29958c..fc516de 100644
+--- a/tools/static_recompile.py
++++ b/tools/static_recompile.py
+@@ -29,9 +29,10 @@ def sext12(v):
+ class SH4Recompiler:
+     """Translates SH-4 binary functions to C code."""
+ 
+-    def __init__(self, binary_data, base_addr=LOAD_ADDR, extra_entries=()):
++    def __init__(self, binary_data, base_addr=LOAD_ADDR, extra_entries=(), code_aliases=()):
+         self.data = binary_data
+         self.extra_entries = set(extra_entries)
++        self.code_aliases = list(code_aliases)
+         self.entry_hints = set()
+         self.base = base_addr
+         self.size = len(binary_data)
+@@ -139,7 +140,8 @@ class SH4Recompiler:
+         # walk in step when a literal pool decodes as a branch.
+         self.entry_hints = (self._mova_targets()
+                             | self._external_branch_targets()
+-                            | self._jump_table_targets())
++                            | self._jump_table_targets()
++                            | self._inline_branch_table_targets())
+ 
+         self._resolve_mid_entries()
+ 
+@@ -222,6 +224,8 @@ class SH4Recompiler:
+                 pc = self.offset_to_addr(offset)
+                 opcode = self.read_u16(offset)
+                 _, is_branch, target, has_delay = self.recompile_instruction(opcode, pc)
++                if has_delay and offset + 2 >= end and pc + 4 < self.base + self.size:
++                    targets.add(pc + 4)  # continuation after a slot in the next fragment
+                 if is_branch and isinstance(target, int):
+                     if not (addr <= target < info['end']):
+                         targets.add(target)
+@@ -239,6 +243,33 @@ class SH4Recompiler:
+             return False
+         return self.offset_to_addr(offset + 2) not in self.entry_hints
+ 
++    def _inline_branch_table_targets(self):
++        """Recognize bounded runs of inline BRA/NOP entries after BRAF Rn.
++
++        The selector can be built in a register across earlier calls. Require
++        two real branch entries, valid delay slots and at most 32 table slots;
++        discovering labels does not change the selector or execute a shortcut.
++        """
++        targets = set()
++        for off in range(0, self.size - 8, 2):
++            if self.read_u16(off) & 0xF0FF != 0x0023 or self.read_u16(off + 2) != 0x0009:
++                continue
++            start = off + 4
++            entries = []
++            branches = 0
++            for i in range(32):
++                at = start + i*4
++                if at + 4 > self.size:
++                    break
++                op, slot = self.read_u16(at), self.read_u16(at + 2)
++                if slot != 0x0009 or not (op == 0x0009 or op & 0xF000 == 0xA000):
++                    break
++                branches += op & 0xF000 == 0xA000
++                entries.append(self.offset_to_addr(at))
++            if branches >= 2:
++                targets.update(entries)
++        return targets
++
+     def _jump_table_targets(self):
+         """Targets of `braf`/`bsrf` fed from a mova'd displacement table.
+ 
+@@ -1094,6 +1125,7 @@ class SH4Recompiler:
+ 
+         # Track which labels we've actually emitted
+         emitted_labels = set()
++        after_delay_slots = set()
+ 
+         offset = func_start
+         while offset < func_end - 1:
+@@ -1142,7 +1174,7 @@ class SH4Recompiler:
+                 continue
+ 
+             # Handle delay slots for branch instructions
+-            if has_delay and offset + 2 < func_end:
++            if has_delay and offset + 2 < self.size:
+                 delay_opcode = self.read_u16(offset + 2)
+                 delay_pc = self.offset_to_addr(offset + 2)
+                 delay_code, _, _, _ = self.recompile_instruction(delay_opcode, delay_pc)
+@@ -1155,17 +1187,21 @@ class SH4Recompiler:
+                 # label. Skipping the branch instead drops the `return` off an
+                 # rts and falls through into the next state on the caller's
+                 # frame, which is how a scene that should run once loops.
+-                slot_is_entry = not self._takes_delay_slot(offset, has_delay)
+-                if slot_is_entry and not (target == "rts" or "jmp" in code
+-                                          or "braf" in code or "rte" in code
+-                                          or ("bra" in code and "bsr" not in code)):
+-                    # Control comes back here - bsr, bt/s, bf/s. An inline copy
+-                    # plus the labelled one would run the slot twice, which is
+-                    # worse than the branch this would have fixed. Leave those
+-                    # alone until they are worth a jump around the label.
+-                    lines.append(f"    {code}")
++                slot_crosses_boundary = offset + 2 >= func_end
++                slot_is_entry = not slot_crosses_boundary and (delay_pc in local_labels
++                                 or not self._takes_delay_slot(offset, has_delay))
++                _, delay_is_branch, _, _ = self.recompile_instruction(delay_opcode, delay_pc)
++                if slot_is_entry and delay_is_branch:
++                    # A control-transfer instruction in a delay slot is illegal
++                    # on SH-4. Usually this is data discovered as candidate code.
++                    # Keep its independent entry, but never silently drop the
++                    # preceding branch to make that invalid path look valid.
++                    lines.append(f"    __builtin_trap(); /* illegal SH-4 delay slot at 0x{delay_pc:08X} */")
+                     offset += 2
+                     continue
++                returns_past_slot = slot_is_entry and not (
++                    target == "rts" or "jmp" in code or "braf" in code
++                    or "rte" in code or ("bra" in code and "bsr" not in code))
+ 
+                 # Emit label at delay-slot position if needed
+                 if delay_pc in local_labels and not slot_is_entry:
+@@ -1182,6 +1218,7 @@ class SH4Recompiler:
+                     # BRA to a shared helper is a tail jump, and emitting it as
+                     # a call makes execution fall through into whatever the
+                     # assembler happened to place next.
++                    lines.append(f"    cpu->pr = 0x{pc + 4:08X}u;")
+                     lines.append(f"    {delay_code} /* delay slot */")
+                     lines.append(f"    func_{target:08X}(cpu); /* bsr */")
+                 elif is_local:
+@@ -1239,10 +1276,25 @@ class SH4Recompiler:
+                     lines.append(f"    {code}")
+                     lines.append(f"    {delay_code} /* delay slot */")
+ 
++                if slot_crosses_boundary:
++                    # A returning call or untaken conditional continues after
++                    # the slot, never at the independently addressable slot.
++                    lines.append(f"    func_{pc + 4:08X}(cpu); return; /* continuation across delay boundary */")
++                    offset += 4
++                    continue
++
++                if returns_past_slot:
++                    # Complete the real branch/call, including its slot, then
++                    # skip the separately emitted entry into that same slot.
++                    # Entry at the slot must still execute it and fall through.
++                    after_delay_slots.add(delay_pc)
++                    lines.append(f"    goto AFTER_SLOT_{delay_pc:08X};")
+                 offset += 2 if slot_is_entry else 4
+                 continue
+ 
+             lines.append(f"    {code}")
++            if pc in after_delay_slots:
++                lines.append(f"AFTER_SLOT_{pc:08X}:;")
+             offset += 2
+ 
+         # Check if function needs fall-through to next function
+@@ -1254,12 +1306,14 @@ class SH4Recompiler:
+                 if stripped and not stripped.startswith("L_") and stripped != "{":
+                     last_code = stripped
+                     break
++            # Comments do not change a terminator's control flow.
++            import re
++            last_code = re.sub(r'/\*.*?\*/', '', last_code).strip()
+             # If last line is not a terminator, add fall-through call
+-            if (last_code and
+-                not last_code.endswith("return;") and
+-                not last_code.endswith("return; }") and
+-                not last_code.startswith("goto ") and
+-                not last_code.startswith("return;")):
++            terminates = (last_code.startswith(("return;", "goto ", "__builtin_trap("))
++                          or re.match(r"(?:\{\s*)?func_[0-9A-F]{8}\(cpu\);\s*return;", last_code))
++            # A conditional ending in return still has an untaken path.
++            if last_code and not terminates:
+                 lines.append(f"    func_{next_func_addr:08X}(cpu); /* fall-through */")
+ 
+         lines.append("}")
+@@ -1374,10 +1428,11 @@ class SH4Recompiler:
+             f.write("    uint32_t lookup = phys | 0x80000000;\n")
+             f.write("    void (*fn)(SH4CPU *cpu) = find_function(lookup);\n")
+             f.write("    if (!fn) {\n")
+-            f.write("        /* Handle relocated bootstrap: 0x0C004000-0x0C008000 -> +0xC100 */\n")
+-            f.write("        if (phys >= 0x0C004000 && phys < 0x0C008000) {\n")
+-            f.write("            fn = find_function((phys + 0xC100) | 0x80000000);\n")
+-            f.write("        }\n")
++            for alias in self.code_aliases:
++                start, end, delta = (int(alias[k], 0) for k in ('start', 'end', 'delta'))
++                f.write(f"        if (phys >= 0x{start:08X}u && phys < 0x{end:08X}u) {{\n")
++                f.write(f"            fn = find_function((phys + 0x{delta:X}u) | 0x80000000u);\n")
++                f.write("        }\n")
+             f.write("    }\n")
+             f.write("#ifdef DCRECOMP_ABI_CHECK\n")
+             f.write("    /* SH-4 keeps r8-r14 callee-saved. A recompiled function\n")
+@@ -1416,6 +1471,7 @@ class SH4Recompiler:
+             f.write("            printf(\"[DISPATCH] unresolved call to 0x%08X (pr=0x%08X)\\n\",\n")
+             f.write("                   cpu->pc, cpu->pr);\n")
+             f.write("        }\n")
++            f.write("        __builtin_trap(); /* unresolved execution is not successful execution */\n")
+             f.write("    }\n")
+             f.write("}\n\n")
+ 
+@@ -1482,12 +1538,16 @@ def main():
+     positional = []
+     base_addr = LOAD_ADDR
+     entries = set()
++    aliases = []
+     args = iter(sys.argv[1:])
+     for arg in args:
+         if arg == '--base':
+             base_addr = int(next(args), 0)
+         elif arg == '--entries':
+             entries |= load_entries(next(args))
++        elif arg == '--aliases':
++            with open(next(args)) as alias_file:
++                aliases = json.load(alias_file)
+         else:
+             positional.append(arg)
+ 
+@@ -1502,7 +1562,7 @@ def main():
+     print(f"Binary: {len(data):,} bytes")
+     print(f"Base address: 0x{base_addr:08X}")
+ 
+-    recompiler = SH4Recompiler(data, base_addr, entries)
++    recompiler = SH4Recompiler(data, base_addr, entries, aliases)
+ 
+     print("Finding functions...")
+     recompiler.find_functions()
