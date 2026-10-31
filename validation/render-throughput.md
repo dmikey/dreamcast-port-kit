@@ -194,5 +194,8 @@ The earlier compatible artifact remains available for comparison. Actual Safari
 execution and low-end hardware performance have not been revalidated here.
 
 Validation: 66 Python tests (including scalar/SIMD WebAssembly execution) and
-11 JavaScript suites passed. The accelerated renderer has not been promoted to
-a locked-60 claim.
+11 JavaScript suites passed. The automated sample does not establish a locked 60.
+
+After this run, the user confirmed seeing 60 FPS in the accelerated build.
+This is user-reported live behavior, separate from the automated transition
+sample above.
