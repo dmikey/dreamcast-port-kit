@@ -1,8 +1,8 @@
-"""Loopback-only multi-project workbench, immutable builds and source-disc chunks."""
+"""Local workbench and an optional isolated LAN player with disc streaming."""
 from http.server import ThreadingHTTPServer,SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlsplit,parse_qs,unquote
-import argparse,html,json,secrets,threading,time
+import argparse,html,json,secrets,threading,time,re
 from debug_service import DebugBroker
 from workspace import Workspace,DEFAULT
 from vmu import VmuStore,VmuConflict,etag
@@ -11,6 +11,10 @@ from artifacts import ID,WEB_NAMES,read_json,list_artifacts
 
 def serve(args):
     kit=Path(__file__).resolve().parent
+    player_only=getattr(args,'player_only',False)
+    host=getattr(args,'host','127.0.0.1')
+    if host not in ('127.0.0.1','localhost') and not player_only:
+        raise ValueError('Network binding requires --player-only; the workbench stays local')
     workspace=Workspace(getattr(args,'workspace',DEFAULT))
     default_project=Path(args.project).resolve()
     default=next((e['id'] for e in workspace.entries() if Path(e['path'])==default_project),None) or workspace.add(default_project)['id']
@@ -18,9 +22,10 @@ def serve(args):
     def context(identity):
         with context_lock:
             if identity not in contexts:
-                project=workspace.resolve(identity);broker=DebugBroker(project)
+                project=workspace.resolve(identity);broker=None if player_only else DebugBroker(project)
                 connection=project/'.local/debug-connection.json'
-                connection.write_text(json.dumps({'token':broker.token,'url':f'http://127.0.0.1:{args.port}','basePath':'/projects/'+identity+'/'})+'\n');connection.chmod(0o600)
+                if not player_only:
+                    connection.write_text(json.dumps({'token':broker.token,'url':f'http://127.0.0.1:{args.port}','basePath':'/projects/'+identity+'/'})+'\n');connection.chmod(0o600)
                 contexts[identity]=(project,broker,VmuStore(project))
             return contexts[identity]
     class Handler(SimpleHTTPRequestHandler):
@@ -49,7 +54,7 @@ def serve(args):
         def log_message(self,format,*parts):
             if '/debug/' not in self.path and not self.path.endswith('/workspace'):super().log_message(format,*parts)
         def debug_guard(self,token=True):
-            hosts=(f'127.0.0.1:{args.port}',f'localhost:{args.port}')
+            hosts=(f'127.0.0.1:{args.port}',f'localhost:{args.port}')+((f'{host}:{args.port}',) if player_only else ())
             if self.headers.get('Host') not in hosts or self.headers.get('Sec-Fetch-Site')=='cross-site':self.send_error(403);return False
             origin=self.headers.get('Origin')
             if origin and origin not in tuple('http://'+h for h in hosts):self.send_error(403);return False
@@ -107,6 +112,12 @@ def serve(args):
             except (ValueError,KeyError,TypeError,UnicodeError) as error:self.json_reply({'error':str(error)},400)
         def do_GET(self):
             try:
+                if player_only:
+                    path=urlsplit(self.path).path
+                    allowed=(WEB_NAMES-{'index.html','debug-bridge.js','workbench.js','projects.js'})|{'game.bin'}
+                    if path=='/':self.path='/player.html'
+                    elif not (path.lstrip('/') in allowed or re.fullmatch(r'/game-[0-9a-f]{16}\.wasm',path) or re.fullmatch(r'/disc/\d+',path)):
+                        self.send_error(404);return
                 if not self.route():return
                 if self.local_path=='/vmu/a1.bin':
                     if not self.debug_guard(False):return
@@ -149,6 +160,7 @@ def serve(args):
                 if name in ('index.html','player.html') and target.is_file():
                     info=workspace.describe(self.identity);ready=self.receipt['runnable'] if self.artifact else info['browserReady']
                     data=target.read_text().replace('>Dreamcast game</strong>','>'+html.escape(info['title'])+'</strong>')
+                    if player_only:data=data.replace('<script src="debug-bridge.js"></script>','')
                     data=data.replace('<body ',f'<body data-project-id="{html.escape(self.identity,quote=True)}" data-build-ready="{str(ready).lower()}" ')
                     self.send_bytes(data.encode(),'text/html; charset=utf-8');return
                 self.send_file(target)
@@ -166,10 +178,12 @@ def serve(args):
             with path.open('rb') as source:self.copyfile(source,self.wfile)
         def end_headers(self):
             self.send_header('Cache-Control','no-store');self.send_header('X-Content-Type-Options','nosniff');super().end_headers()
-    server=ThreadingHTTPServer(('127.0.0.1',args.port),Handler)
+    if player_only:
+        Handler.do_POST=lambda self:self.send_error(404)
+    server=ThreadingHTTPServer((host,args.port),Handler)
     context(default)
-    print(f'Workbench: http://127.0.0.1:{args.port}/ — Projects: /projects/<id>/ — Player: /player.html',flush=True)
+    print(f'Player: http://{host}:{args.port}/player.html' if player_only else f'Workbench: http://127.0.0.1:{args.port}/ — Projects: /projects/<id>/ — Player: /player.html',flush=True)
     server.serve_forever()
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('--project',required=True);p.add_argument('--port',type=int,default=4390);p.add_argument('--workspace',default=str(DEFAULT));serve(p.parse_args())
+    p=argparse.ArgumentParser();p.add_argument('--project',required=True);p.add_argument('--port',type=int,default=4390);p.add_argument('--workspace',default=str(DEFAULT));p.add_argument('--host',default='127.0.0.1');p.add_argument('--player-only',action='store_true');serve(p.parse_args())

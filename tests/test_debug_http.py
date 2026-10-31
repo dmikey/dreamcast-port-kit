@@ -5,6 +5,33 @@ from urllib.request import Request,urlopen
 from urllib.error import HTTPError
 
 class DebugHTTPTests(unittest.TestCase):
+ def test_player_only_does_not_expose_tools_or_replace_debug_connection(self):
+  with tempfile.TemporaryDirectory() as tmp:
+   project=Path(tmp);(project/'port.json').write_text('{"disc":{"title":"Test"}}')
+   web=project/'.local/browser';web.mkdir(parents=True)
+   (web/'player.html').write_text('<body ><script src="debug-bridge.js"></script>Player</body>')
+   track=project/'.local/track.raw';track.write_bytes(b'fixture')
+   (project/'.local/source-lock.json').write_text(json.dumps({'tracks':[{'path':str(track)}]}))
+   connection=project/'.local/debug-connection.json';connection.write_text('existing connection')
+   with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
+   process=subprocess.Popen([sys.executable,str(Path(__file__).resolve().parents[1]/'serve_browser.py'),'--project',str(project),'--port',str(port),'--player-only','--workspace',str(project/'.local/workspace.json')],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+   try:
+    base=f'http://127.0.0.1:{port}'
+    for _ in range(100):
+     try:
+      with urlopen(base+'/',timeout=.2) as response:page=response.read()
+      break
+     except OSError:time.sleep(.02)
+    else:self.fail('Player server did not start')
+    self.assertIn(b'Player',page);self.assertNotIn(b'debug-bridge.js',page)
+    self.assertEqual(connection.read_text(),'existing connection')
+    with urlopen(base+'/disc/0?offset=0&length=3') as response:self.assertEqual(response.read(),b'fix')
+    for path in ['/debug/config','/workspace','/vmu/a1.bin','/projects/other/player.html','/index.html','/.local/source-lock.json','/../port.json']:
+     with self.assertRaises(HTTPError) as error:urlopen(base+path)
+     self.assertEqual(error.exception.code,404)
+    with self.assertRaises(HTTPError) as error:urlopen(Request(base+'/debug/register',data=b'{}'))
+    self.assertEqual(error.exception.code,404)
+   finally:process.terminate();process.wait(timeout=3)
  def test_auth_origin_host_and_content_type(self):
   with tempfile.TemporaryDirectory() as tmp:
    project=Path(tmp);(project/'port.json').write_text('{"disc":{"title":"Test"}}');(project/'.local/browser').mkdir(parents=True);(project/'.local/source-lock.json').write_text('{"tracks":[]}')

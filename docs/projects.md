@@ -61,3 +61,18 @@ releases. The repository contains the reusable tooling and synthetic tests.
 An unknown title needs addresses and startup/interrupt behavior verified against
 its own executable. Importing or translating it does not imply it can boot. The
 workbench preserves that distinction in project status and recorded evidence.
+## Testing a player on another device
+
+Keep the workbench local and serve one project's player on your LAN address:
+
+```sh
+python3 serve_browser.py --project /path/to/project --port 4393 \
+  --host 192.168.1.12 --player-only
+```
+
+Use your computer's current LAN address, then open `/player.html` from a device
+on the same network. This mode serves that game's browser build and disc chunks;
+debug tools, project browsing and server VMU editing are unavailable. It does not
+replace the local workbench's debugger connection. Saves remain in the visiting
+browser. HTTP network origins may lack AudioWorklet and Gamepad API support;
+those features require a trusted HTTPS origin in browsers that enforce it.
