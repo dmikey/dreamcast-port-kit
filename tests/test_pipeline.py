@@ -61,6 +61,13 @@ sh4_set_hardware(hw);sh4_set_cpu_ref(&c);sh4_bios_set_gdrom_track(argv[1],45000)
 sh4_write32(&c,0x0c005000,45166);sh4_write32(&c,0x0c005004,1);sh4_write32(&c,0x0c005008,0x0c006000);
 c.pc=0x8c0000bc;c.r[7]=0;c.r[4]=17;c.r[5]=0x0c005000;
 assert(sh4_bios_syscall(&c));assert(memcmp(c.ram+0x6001,"CD001",5)==0);
+unsigned request=c.r[0];c.r[7]=1;c.r[4]=request;c.r[5]=0x0c007000;
+assert(sh4_bios_syscall(&c));assert(c.r[0]==1);assert(sh4_read32(&c,0x0c007008)==0);
+assert(sh4_bios_syscall(&c));assert(c.r[0]==2);assert(sh4_read32(&c,0x0c007008)==2048);
+c.r[7]=0;c.r[4]=24;c.r[5]=0;assert(sh4_bios_syscall(&c));
+request=c.r[0];c.r[7]=1;c.r[4]=request;c.r[5]=0x0c007000;
+assert(sh4_bios_syscall(&c));assert(c.r[0]==1);
+assert(sh4_bios_syscall(&c));assert(c.r[0]==2);assert(sh4_read32(&c,0x0c007008)==0);
 return 0;
 }'''
         (path/'bios-test.c').write_text(source)

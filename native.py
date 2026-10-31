@@ -89,7 +89,9 @@ def build(args, kit, error, verify, write_json):
     import maple
     (native/'hardware.c').write_text(maple.adapt((core/'src/hal/dc_hardware.c').read_text()))
     sources+=[kit/'runtime/vmu.c']
-    sources+=[native/'hardware.c' if p.name=='dc_hardware.c' else p for p in (core/'src/hal').glob('*.c')]+[core/'src/platform/platform_sdl2.c']
+    import gdrom
+    (native/'dc_bios.c').write_text(gdrom.adapt((core/'src/hal/dc_bios.c').read_text()))
+    sources+=[native/'hardware.c' if p.name=='dc_hardware.c' else native/'dc_bios.c' if p.name=='dc_bios.c' else p for p in (core/'src/hal').glob('*.c')]+[core/'src/platform/platform_sdl2.c']
     cc=shutil.which('clang') or shutil.which('cc')
     if not cc: raise error('A C11 compiler is required for native bring-up')
     flags=['-std=c11','-O0','-g','-include','time.h','-Wno-unused-value','-Wno-parentheses-equality',

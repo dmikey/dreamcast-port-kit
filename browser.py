@@ -86,7 +86,8 @@ def build(args,kit,error,verify,write_json):
     hardware=hardware.replace('                        resp[2] = (uint32_t)ctrl->buttons', '                        {static unsigned last=~0u,changes;unsigned value=ctrl->buttons|((unsigned)ctrl->rtrig<<16)|((unsigned)ctrl->ltrig<<24);if(value!=last){if(changes<64){changes++;printf("[MAPLE-INPUT] buttons=%04X rt=%u lt=%u response=%08X\\n",ctrl->buttons,ctrl->rtrig,ctrl->ltrig,header_2);}last=value;}}\n                        resp[2] = (uint32_t)ctrl->buttons')
     import maple
     (output/'hardware.c').write_text(maple.adapt(hardware))
-    bios=(core/'src/hal/dc_bios.c').read_text()
+    import gdrom
+    bios=gdrom.adapt((core/'src/hal/dc_bios.c').read_text())
     bios=bios.replace('#define GDC_MAX_TRACKS 24','#include "browser_disc.h"\n#define GDC_MAX_TRACKS 24')
     begin=bios.index('    FILE *f = fopen(path, "rb");');end=bios.index('    g_tracks[g_track_count].start_lba',begin)
     sizes=[Path(t['path']).stat().st_size for t in lock['tracks']]

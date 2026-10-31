@@ -32,6 +32,7 @@ void sh4_install_crash_handler(void) {
     sigaction(SIGBUS, &handler, NULL);
     sigaction(SIGABRT, &handler, NULL);
     sigaction(SIGILL, &handler, NULL);
+    sigaction(SIGTRAP, &handler, NULL);
     handler.sa_handler = runtime_trace;
     sigaction(SIGUSR1, &handler, NULL);
 }

@@ -5,6 +5,27 @@ from interrupts import adapt_cpu
 ROOT=Path(__file__).resolve().parents[1]
 @unittest.skipUnless(os.environ.get('DC_PORT_TEST_TOOLCHAIN'),'Set DC_PORT_TEST_TOOLCHAIN')
 class InterruptVectorTests(unittest.TestCase):
+ def test_holly_priorities_require_a_routed_source(self):
+  core=Path(os.environ['DC_PORT_TEST_TOOLCHAIN']);source=adapt_cpu((core/'src/recompiler/sh4_cpu.c').read_text())
+  begin=source.index('static int vblank_irl_level(void) {');end=source.index('\n}',begin)+2
+  code=r'''
+#include <stdint.h>
+#include <assert.h>
+enum {SB_IML6NRM,SB_IML4NRM,SB_IML2NRM,SB_IML6EXT,SB_IML4EXT,SB_IML2EXT};
+static uint32_t regs[6],normal,external;static int *g_hardware;
+uint32_t dc_hw_get_istnrm(void*h){return normal;}
+uint32_t dc_hw_get_istext(void*h){return external;}
+uint32_t dc_hw_read32(void*h,unsigned a){return regs[a];}
+'''+source[begin:end]+r'''
+int main(void){normal=8;assert(vblank_irl_level()==0);
+regs[SB_IML6NRM]=8;assert(vblank_irl_level()==6);regs[SB_IML6NRM]=0;
+regs[SB_IML4NRM]=8;assert(vblank_irl_level()==4);regs[SB_IML4NRM]=0;
+regs[SB_IML2NRM]=8;assert(vblank_irl_level()==2);normal=0;
+external=1;regs[SB_IML6EXT]=1;assert(vblank_irl_level()==6);
+regs[SB_IML6EXT]=0;assert(vblank_irl_level()==0);}
+'''
+  with tempfile.TemporaryDirectory() as tmp:
+   p=Path(tmp);(p/'test.c').write_text(code);subprocess.run(['clang',str(p/'test.c'),'-o',str(p/'test')],check=True,capture_output=True);subprocess.run([str(p/'test')],check=True)
  def test_delivered_priority_has_correct_intevt(self):
   core=Path(os.environ['DC_PORT_TEST_TOOLCHAIN']);source=adapt_cpu((core/'src/recompiler/sh4_cpu.c').read_text())
   self.assertIn('case 0xFF000028: return port_intevt;',source)
