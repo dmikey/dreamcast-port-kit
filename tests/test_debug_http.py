@@ -25,6 +25,11 @@ class DebugHTTPTests(unittest.TestCase):
      with self.assertRaises(HTTPError) as error:request('/debug/sessions',headers)
      self.assertEqual(error.exception.code,code)
     headers={'Authorization':'Bearer '+token,'Content-Type':'application/json','Origin':base}
+    # Current worker tools can open an older, Asyncify-only build. The served
+    # selector contains this project's identity, never the unexpanded template.
+    (project/'.local/browser/build.json').write_text(json.dumps({'wasmSHA256':'a'*64}))
+    with urlopen(base+'/runtime-loader.js') as response:selector=response.read().decode()
+    self.assertNotIn('/*PORT_RUNTIME_BUILDS*/',selector);self.assertIn('a'*64,selector);self.assertIn('"loader": "game.js"',selector)
     registered=request('/debug/register',headers,b'{"view":"workbench"}')
     self.assertIn('session_id',registered)
     self.assertEqual(len(request('/debug/sessions',headers)['sessions']),1)

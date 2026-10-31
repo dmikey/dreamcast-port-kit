@@ -24,12 +24,12 @@ self.onmessage=event=>{
    Module={canvas:data.canvas,
     preRun:[()=>{GL.offscreenCanvases.canvas=Module.canvas;}],
     print:log,printErr:log,
-    onRuntimeInitialized:()=>{ready=true;postMessage({kind:'ready'});applyInput();},
+    onRuntimeInitialized:()=>{ready=true;postMessage({kind:'ready',build:typeof portSelectedBuild==='undefined'?null:portSelectedBuild});applyInput();},
     onAbort:fail,onExit:code=>{if(code)fail('Worker runtime exited with code '+code);},
     portAudioPush:samples=>postMessage({kind:'audio',samples},[samples.buffer]),
-    portBrowserYield:async()=>{flushLogs();if(paused)await new Promise(resolve=>resumeWorker=resolve);return portBrowserScheduler.yield();}
+    portBrowserYield:async(delay=0)=>{flushLogs();if(paused)await new Promise(resolve=>resumeWorker=resolve);return delay>0?portBrowserScheduler.idle():portBrowserScheduler.yield();}
    };
-   importScripts('vmu-format.js','vmu-storage.js','vmu-transport.js','browser-scheduler.js','game.js');
+   importScripts('vmu-format.js','vmu-storage.js','vmu-transport.js','browser-scheduler.js','runtime-loader.js');
   }catch(error){fail(error.stack||error.message||error);}
  }else if(data.kind==='pause'&&ready){
   paused=!!data.value;if(paused){cancelReplay();endPulse();if(benchmarkTimer!==null){clearTimeout(benchmarkTimer);benchmarkTimer=null;log('[BENCHMARK] cancelled by pause');}}else if(resumeWorker){const resume=resumeWorker;resumeWorker=null;resume();}log('[RUNTIME] '+(paused?'paused':'resumed'));

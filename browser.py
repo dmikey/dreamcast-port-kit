@@ -3,26 +3,33 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 import hashlib,json,subprocess,shutil,os,sys,html
 
+def render_runtime_loader(kit,info):
+    builds={'asyncify':{'loader':'game.js','suspension':'asyncify','wasmSHA256':info.get('wasmSHA256')},**info.get('variants',{})}
+    return (kit/'runtime/web/runtime-loader.js').read_text().replace('/*PORT_RUNTIME_BUILDS*/{}',json.dumps(builds))
+
 def publish_web_assets(kit,project,output):
-    names=('index.html','player.html','workbench.js','projects.js','debug-bridge.js','browser.js','browser.css','browser-scheduler.js','runtime-bridge.js','runtime-worker.js','vmu-format.js','vmu-storage.js','vmu-transport.js','vmu-ui.js','audio.js','audio-worklet.js')
+    names=('index.html','player.html','workbench.js','projects.js','debug-bridge.js','browser.js','browser.css','browser-scheduler.js','runtime-bridge.js','runtime-worker.js','runtime-loader.js','vmu-format.js','vmu-storage.js','vmu-transport.js','vmu-ui.js','audio.js','audio-worklet.js')
     for name in names:shutil.copyfile(kit/'runtime/web'/name,output/name)
+    info=json.loads((output/'build.json').read_text()) if (output/'build.json').exists() else {}
+    (output/'runtime-loader.js').write_text(render_runtime_loader(kit,info))
     title=json.loads((project/'port.json').read_text()).get('disc',{}).get('title','Dreamcast game')
     page=output/'index.html'
     page.write_text(page.read_text().replace('>Dreamcast game</strong>','>'+html.escape(title)+'</strong>'))
 
-def publish_bundle(output):
+def publish_bundle(output,stem='game'):
     # Publish the loader only after its content-addressed WASM is complete.
     # A running server must never pair an old loader with a partial new link.
-    wasm_bytes=(output/'game.next.wasm').read_bytes()
+    wasm_bytes=(output/(stem+'.next.wasm')).read_bytes()
     wasm_name='game-'+hashlib.sha256(wasm_bytes).hexdigest()[:16]+'.wasm'
     destination=output/wasm_name
     if not destination.exists() or destination.read_bytes()!=wasm_bytes:
         pending=output/(wasm_name+'.pending')
         pending.write_bytes(wasm_bytes);pending.replace(destination)
-    loader=(output/'game.next.js').read_text().replace('game.next.wasm',wasm_name)
-    (output/'game.publish.js').write_text(loader)
-    (output/'game.publish.js').replace(output/'game.js')
-    shutil.copyfile(output/'game.next.wasm',output/'game.wasm')
+    loader=(output/(stem+'.next.js')).read_text().replace(stem+'.next.wasm',wasm_name)
+    (output/(stem+'.publish.js')).write_text(loader)
+    (output/(stem+'.publish.js')).replace(output/(stem+'.js'))
+    if stem=='game':shutil.copyfile(output/(stem+'.next.wasm'),output/'game.wasm')
+    return {'loader':stem+'.js','suspension':'asyncify' if stem=='game' else 'jspi','wasmSHA256':hashlib.sha256(wasm_bytes).hexdigest()}
 
 def build(args,kit,error,verify,write_json):
     import native
@@ -88,9 +95,11 @@ def build(args,kit,error,verify,write_json):
     bios=bios.replace('            if (fseek(g_tracks[t].f, off, SEEK_SET) == 0)\n                fread(sector, 1, GDC_RAW_SECTOR, g_tracks[t].f);','            port_disc_read(t,off,sector);')
     (output/'bios.c').write_text(bios)
     import memory_access
-    cpu=memory_access.adapt((local/'cpu.c').read_text())
+    cpu=memory_access.adapt_reads(memory_access.adapt((local/'cpu.c').read_text()))
     cpu='#include <emscripten.h>\n#include "browser_clock.h"\n#include "browser_yield.h"\n'+cpu
-    cpu=cpu.replace('void sh4_poll_irq(SH4CPU *cpu) {', 'void sh4_poll_irq(SH4CPU *cpu) {\n    static double yielded,waited,reported;static unsigned yields;double now=emscripten_get_now();if(now-yielded>8){double before=now;port_browser_yield();yielded=emscripten_get_now();now=yielded;waited+=yielded-before;yields++;if(yielded-reported>5000){printf("[PERF] %u CPU yields, %.0fms waiting / %.0fms elapsed\\n",yields,waited,yielded-reported);reported=yielded;waited=0;yields=0;}}')
+    import scheduler
+    cpu=scheduler.idle_state(cpu)
+    cpu=cpu.replace('void sh4_poll_irq(SH4CPU *cpu) {','void sh4_poll_irq(SH4CPU *cpu) {'+scheduler.poll_entry())
     # Browser disc reads already take wall time. Virtual-drive credit must not
     # deliver queued VBlanks in a burst and advance the gameplay timer.
     cpu=cpu.replace('void sh4_poll_irq(SH4CPU *cpu) {','void port_aica_update_at(DCHardware*,uint64_t);\nvoid sh4_poll_irq(SH4CPU *cpu) {')
@@ -98,7 +107,7 @@ def build(args,kit,error,verify,write_json):
     cpu=cpu.replace('void sh4_credit_elapsed_ms(uint32_t ms) {', 'void sh4_credit_elapsed_ms(uint32_t ms) {(void)ms;return;')
     begin=cpu.index('          uint64_t now = platform_get_ticks_ms();',cpu.index('if (vpolls > 0)'))
     end=cpu.index('          }\n          }',begin)+len('          }')
-    cpu=cpu[:begin]+'''          if(port_vblank_ready(emscripten_get_now()))dc_pvr_wait_vblank(g_hardware);'''+cpu[end:]
+    cpu=cpu[:begin]+scheduler.clock_poll()+cpu[end:]
     (output/'cpu.c').write_text(cpu)
     (output/'fault.c').write_text('void sh4_dump_native_stack(const char *tag) {(void)tag;}\nvoid sh4_install_crash_handler(void) {}\n')
     sources=sorted((generated/'src').glob('*.c'))+[local/'unresolved.c',output/'cpu.c',core/'src/recompiler/sh4_task.c',kit/'runtime/runner.c',kit/'runtime/vmu.c',output/'fault.c']
@@ -122,10 +131,15 @@ def build(args,kit,error,verify,write_json):
     with ThreadPoolExecutor(max_workers=3) as pool:compiled=list(pool.map(compile_one,sources))
     _,exe=verify(project)
     assertions=bool(args.abi or getattr(args,'assertions',False))
-    result=subprocess.run([sys.executable,str(emcc),*map(str,compiled),*link_optimization,'-g2','-sENVIRONMENT=worker','-sOFFSCREENCANVAS_SUPPORT=1','-sMIN_SAFARI_VERSION=170000','-sMIN_WEBGL_VERSION=2','-sMAX_WEBGL_VERSION=2','-sASYNCIFY=1','-sASYNCIFY_STACK_SIZE=4194304','-sSTACK_SIZE=16777216','-sINITIAL_MEMORY=134217728','-sALLOW_MEMORY_GROWTH=1','-sMAXIMUM_MEMORY=1073741824','-sASSERTIONS='+('2' if assertions else '0'),'-sSTACK_OVERFLOW_CHECK='+('2' if assertions else '0'),'--embed-file',str(exe)+'@/game.bin','-o',str(output/'game.next.js')],capture_output=True,text=True)
-    (output/'link.log').write_text(result.stdout+result.stderr)
-    if result.returncode:raise error('WebAssembly link: '+result.stderr[-2500:])
-    publish_bundle(output)
+    variants={}
+    for suspension in (('asyncify','jspi') if getattr(args,'jspi',False) else ('asyncify',)):
+        stem='game' if suspension=='asyncify' else 'game-jspi'
+        suspension_flags=['-sJSPI=1'] if suspension=='jspi' else ['-sASYNCIFY=1','-sASYNCIFY_STACK_SIZE=4194304']
+        result=subprocess.run([sys.executable,str(emcc),*map(str,compiled),*link_optimization,'-g2','-sENVIRONMENT=worker','-sOFFSCREENCANVAS_SUPPORT=1','-sMIN_SAFARI_VERSION=170000','-sMIN_WEBGL_VERSION=2','-sMAX_WEBGL_VERSION=2',*suspension_flags,'-sSTACK_SIZE=16777216','-sINITIAL_MEMORY=134217728','-sALLOW_MEMORY_GROWTH=1','-sMAXIMUM_MEMORY=1073741824','-sASSERTIONS='+('2' if assertions else '0'),'-sSTACK_OVERFLOW_CHECK='+('2' if assertions else '0'),'--embed-file',str(exe)+'@/game.bin','-o',str(output/(stem+'.next.js'))],capture_output=True,text=True)
+        (output/(stem+'-link.log')).write_text(result.stdout+result.stderr)
+        if result.returncode:raise error('WebAssembly '+suspension+' link: '+result.stderr[-2500:])
+        bundle=publish_bundle(output,stem)
+        if suspension=='jspi':variants['jspi']=bundle
+    write_json(output/'build.json',{'target':'browser-webgl2','suspension':'asyncify','variants':variants,'features':{'vmu':2,'ramReadFastPath':1,'idleCooperation':1,'discCacheSlots':16},'execution':'dedicated-worker-offscreen','optimization':'O2-debug' if args.abi else 'O3-thinlto' if optimized else 'O2','playable':False,'abiChecks':bool(args.abi),'assertions':assertions,'scheduler':'message-channel-8ms','sourceSetSHA256':json.loads((project/'port.json').read_text())['sourceSetSHA256'],'wasmSHA256':hashlib.sha256((output/'game.wasm').read_bytes()).hexdigest()})
     publish_web_assets(kit,project,output)
-    write_json(output/'build.json',{'target':'browser-webgl2','features':{'vmu':2},'execution':'dedicated-worker-offscreen','optimization':'O2-debug' if args.abi else 'O3-thinlto' if optimized else 'O2','playable':False,'abiChecks':bool(args.abi),'assertions':assertions,'scheduler':'message-channel-8ms','sourceSetSHA256':json.loads((project/'port.json').read_text())['sourceSetSHA256'],'wasmSHA256':hashlib.sha256((output/'game.wasm').read_bytes()).hexdigest()})
     print('Browser build ready. Run serve-browser; gameplay remains unverified.')

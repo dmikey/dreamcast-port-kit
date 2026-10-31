@@ -21,7 +21,9 @@ function output(...parts){
  if(!text.startsWith('[STARTUP]')&&!text.startsWith('[RUNTIME]')&&(/\[PVR2\] Shader (compile|link) error/.test(text)||/\[PLATFORM\].*failed:/.test(text)))startupFailure(text);
 }
 setInterval(()=>{flushLog();if(runtimeReady&&!gamePaused&&lastProgress&&!freezeReported&&performance.now()-lastProgress>4000){freezeReported=true;output('[WATCHDOG] No execution progress for 4 seconds.');}},250);
-let runtimeReady=false,buildInfo=null,workerRuntime=null;const measurements=[];
+let runtimeReady=false,buildInfo=null,selectedRuntimeBuild=null,workerRuntime=null;
+function updateBuild(info){buildInfo={...buildInfo,...info};if(typeof portDevtools!=='undefined')portDevtools.build(buildInfo);}
+const measurements=[];
 function reportStartup(reason){
  if(typeof fetch!=='function')return;
  const payload={schemaVersion:1,reason:String(reason).slice(0,1000),userAgent:navigator.userAgent||'',runtimeReady,events:diagnostics.snapshot().slice(-40).map(e=>({kind:e.kind,message:e.message.slice(0,1000)}))};
@@ -38,10 +40,10 @@ function startRuntime(startAudio=true){
  if(typeof WebAssembly==='undefined'){startupFailure('This browser does not provide WebAssembly.');return;}
  if(typeof Worker==='undefined'||typeof Module.canvas.transferControlToOffscreen!=='function'){startupFailure('Web Workers and WebGL OffscreenCanvas are required (Safari 17 or newer).');return;}
  if(startAudio&&typeof portAudio!=='undefined')portAudio.start().catch(error=>{output('[AUDIO] '+error.message);reportStartup('Audio: '+error.message);});
- if(typeof fetch==='function')fetch('build.json').then(response=>response.json()).then(info=>{buildInfo=info;if(typeof portDevtools!=='undefined')portDevtools.build(info);}).catch(()=>{});
+ if(typeof fetch==='function')fetch('build.json').then(response=>response.json()).then(info=>{updateBuild({...info,...selectedRuntimeBuild});}).catch(()=>{});
  document.querySelector('#start').disabled=true;runtimeState('loading');status.textContent='Loading worker runtime…';reportStartup('Starting worker runtime');
  try{
-  workerRuntime=new PortWorkerRuntime(Module.canvas,{ready:()=>Module.onRuntimeInitialized(),log:output,audio:Module.portAudioPush,frame:saveFrame,vmu:data=>{if(data.kind==='vmu-status')Module.canvas.dataset.vmu=data.error||data.message;if(typeof portVmuUI!=='undefined')portVmuUI.event(data);if(data.error)output('[VMU] '+data.error);},snapshot:bytes=>saveDownload(bytes,'application/octet-stream','dreamcast-render-snapshot.bin'),vram:bytes=>saveDownload(bytes,'application/octet-stream','dreamcast-vram.bin'),benchmark:result=>{measurements.push(result);output('[BENCHMARK] '+JSON.stringify(result));},error:startupFailure});
+  workerRuntime=new PortWorkerRuntime(Module.canvas,{build:info=>{selectedRuntimeBuild=info;updateBuild(info);},ready:()=>Module.onRuntimeInitialized(),log:output,audio:Module.portAudioPush,frame:saveFrame,vmu:data=>{if(data.kind==='vmu-status')Module.canvas.dataset.vmu=data.error||data.message;if(typeof portVmuUI!=='undefined')portVmuUI.event(data);if(data.error)output('[VMU] '+data.error);},snapshot:bytes=>saveDownload(bytes,'application/octet-stream','dreamcast-render-snapshot.bin'),vram:bytes=>saveDownload(bytes,'application/octet-stream','dreamcast-vram.bin'),benchmark:result=>{measurements.push(result);output('[BENCHMARK] '+JSON.stringify(result));},error:startupFailure});
   Module._port_button=(bit,pressed)=>workerRuntime.button(bit,pressed);
   Module._port_axes=(left,right,x,y)=>workerRuntime.axes(left,right,x,y);
   Module._port_render_capture=()=>workerRuntime.capture();

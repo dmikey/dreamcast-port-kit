@@ -27,6 +27,14 @@ class ArtifactsTests(unittest.TestCase):
  def test_failed_stage_cannot_adopt_previous_build(self):
   self.build();receipt=record(self.project,'build-browser','failed','Missing title profile')
   self.assertFalse(receipt['runnable']);self.assertNotIn('build',receipt);self.assertNotIn('stage.json',[f['name'] for f in receipt['files']]);self.assertIn('Missing title profile',receipt['message'])
+ def test_native_stack_variant_is_verified_and_retained(self):
+  web,_=self.build();sha=hashlib.sha256(b'native stack').hexdigest();name='game-'+sha[:16]+'.wasm'
+  (web/name).write_bytes(b'native stack');(web/'game-jspi.js').write_text('fetch("'+name+'")')
+  info=json.loads((web/'build.json').read_text());info['variants']={'jspi':{'loader':'game-jspi.js','suspension':'jspi','wasmSHA256':sha}};(web/'build.json').write_text(json.dumps(info))
+  receipt=record(self.project,'build-browser');snapshot=self.project/'.local/artifacts'/receipt['id']/'browser'
+  self.assertEqual((snapshot/name).read_bytes(),b'native stack');self.assertTrue((snapshot/'game-jspi.js').is_file())
+  (web/name).write_bytes(b'corrupt')
+  with self.assertRaisesRegex(ValueError,'variant hash'):record(self.project,'build-browser')
  def test_registry_rejects_alias_collisions_and_reports_missing_fields(self):
   ws=Workspace(self.root/'workspace.json');ws.add(self.project,'first');self.assertEqual(ws.resolve('first'),self.project.resolve())
   other=self.root/'other';other.mkdir();(other/'port.json').write_text(json.dumps(self.manifest))

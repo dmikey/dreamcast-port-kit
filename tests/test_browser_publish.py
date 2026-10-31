@@ -17,6 +17,18 @@ class BrowserPublishTests(unittest.TestCase):
     if previous:self.assertTrue((root/previous).exists())
     previous=name
 
+ def test_native_stack_bundle_does_not_replace_compatibility_bundle(self):
+  with tempfile.TemporaryDirectory() as temp:
+   root=Path(temp)
+   for stem,data in (('game',b'compatibility'),('game-jspi',b'native stack')):
+    (root/(stem+'.next.wasm')).write_bytes(data)
+    (root/(stem+'.next.js')).write_text('fetch("'+stem+'.next.wasm")')
+    result=publish_bundle(root,stem)
+    self.assertEqual(result['wasmSHA256'],hashlib.sha256(data).hexdigest())
+   self.assertEqual((root/'game.wasm').read_bytes(),b'compatibility')
+   self.assertIn(hashlib.sha256(b'compatibility').hexdigest()[:16],(root/'game.js').read_text())
+   self.assertIn(hashlib.sha256(b'native stack').hexdigest()[:16],(root/'game-jspi.js').read_text())
+
  def test_web_entrypoints_and_escaped_disc_title(self):
   import json
   with tempfile.TemporaryDirectory() as temp:

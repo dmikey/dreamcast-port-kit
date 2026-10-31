@@ -6,7 +6,7 @@ class PortWorkerRuntime {
   if(typeof Worker==='undefined'||typeof this.canvas.transferControlToOffscreen!=='function')throw new Error('This build requires Web Workers and WebGL OffscreenCanvas (Safari 17 or newer).');
   this.worker=new Worker('runtime-worker.js');
   this.worker.onmessage=event=>{const data=event.data;
-   if(data.kind==='ready'){this.ready=true;this.canvas.dataset.runtime='ready';this.callbacks.ready();this.flush(true);}
+   if(data.kind==='ready'){if(data.build)this.callbacks.build?.(data.build);this.ready=true;this.canvas.dataset.runtime='ready';this.callbacks.ready();this.flush(true);}
    else if(data.kind==='input-applied'){this.canvas.dataset.inputApplied=String(data.bits);if(data.bits)this.canvas.dataset.lastPressed=String(data.bits);if(data.sequence===this.inputInFlight){this.inputInFlight=null;this.sendInput();}}
    else if(data.kind==='logs'){for(const line of data.lines)this.callbacks.log(line);}
    else if(data.kind==='benchmark')this.callbacks.benchmark?.(data.result);

@@ -10,5 +10,6 @@ const source=fs.readFileSync(path.join(__dirname,'../runtime/web/browser-schedul
  document.hidden=true;const c=context.scheduler.yield();assert.equal(timers.length,1);timers.shift()();await c;
  const fallback=vm.createContext({document:{hidden:false},setTimeout:resolve=>timers.push(resolve)});vm.runInContext(source+'\nvar scheduler=portBrowserScheduler;',fallback);const d=fallback.scheduler.yield();timers.shift()();await d;
  const worker=vm.createContext({MessageChannel:Channel,setTimeout:resolve=>timers.push(resolve)});vm.runInContext(source+'\nvar scheduler=portBrowserScheduler;',worker);const workerYield=worker.scheduler.yield();assert.equal(timers.length,0,'workers have no document and must use task messages');tasks.shift()();await workerYield;
+ const idleTask=worker.scheduler.idle();assert.equal(timers.length,1,'idle yields must wait for a short timer');timers.shift()();assert.equal(tasks.length,1,'idle continuation must resume through a message task');tasks.shift()();await idleTask;
  console.log('Scheduler passed: asynchronous task, FIFO, channel reuse, no active-tab timer, hidden/unsupported fallback.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

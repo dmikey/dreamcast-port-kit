@@ -137,9 +137,13 @@ def serve(args):
                     name='artifact.json' if self.local_path=='/receipt.json' else self.local_path[1:]
                     self.send_file(self.project/'.local/artifacts'/self.artifact/name);return
                 name=self.local_path.lstrip('/') or 'index.html'
+                if not self.artifact and name=='runtime-loader.js':
+                    # Current tools also open older Asyncify-only projects.
+                    from browser import render_runtime_loader
+                    self.send_bytes(render_runtime_loader(kit,read_json(self.root/'build.json',{})).encode(),'text/javascript; charset=utf-8');return
                 target=(self.root/name).resolve()
                 if not target.is_relative_to(self.root.resolve()):self.send_error(404);return
-                if not self.artifact and name in WEB_NAMES-{'game.js','build.json'}:
+                if not self.artifact and name in WEB_NAMES-{'game.js','build.json','runtime-loader.js'}:
                     # Current workspaces use current tools. Historical builds retain their tools.
                     target=kit/'runtime/web'/name
                 if name in ('index.html','player.html') and target.is_file():

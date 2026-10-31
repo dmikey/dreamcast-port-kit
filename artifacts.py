@@ -4,7 +4,7 @@ import hashlib,json,re,shutil,uuid
 from pathlib import Path
 
 ID=re.compile(r'^[a-z0-9][a-z0-9-]{0,95}$')
-WEB_NAMES={'index.html','player.html','workbench.js','projects.js','debug-bridge.js','browser.js','browser.css','browser-scheduler.js','runtime-bridge.js','runtime-worker.js','vmu-format.js','vmu-storage.js','vmu-transport.js','vmu-ui.js','audio.js','audio-worklet.js','game.js','build.json'}
+WEB_NAMES={'index.html','player.html','workbench.js','projects.js','debug-bridge.js','browser.js','browser.css','browser-scheduler.js','runtime-bridge.js','runtime-worker.js','runtime-loader.js','vmu-format.js','vmu-storage.js','vmu-transport.js','vmu-ui.js','audio.js','audio-worklet.js','game.js','build.json'}
 def read_json(path,default=None):
     try:return json.loads(Path(path).read_text())
     except FileNotFoundError:return default
@@ -30,8 +30,17 @@ def record(project,stage,status='succeeded',message='',log=None):
         if actual!=build['wasmSHA256']:raise ValueError('Browser build hash does not match its WASM')
         if wasm.name not in loader.read_text():raise ValueError('Browser loader does not reference the recorded WASM')
         if build.get('sourceSetSHA256')!=manifest.get('sourceSetSHA256'):raise ValueError('Browser build belongs to a different source disc')
+        bundle_names={wasm.name}
+        for kind,variant in build.get('variants',{}).items():
+            if kind!='jspi' or variant.get('loader')!='game-jspi.js' or variant.get('suspension')!='jspi':raise ValueError('Unknown browser build variant')
+            sha=variant.get('wasmSHA256','')
+            if not re.fullmatch('[a-f0-9]{64}',sha):raise ValueError('Invalid variant WASM hash')
+            binary=source/('game-'+sha[:16]+'.wasm');script=source/variant['loader']
+            if not binary.is_file() or hashlib.sha256(binary.read_bytes()).hexdigest()!=sha:raise ValueError('Browser variant hash does not match its WASM')
+            if not script.is_file() or binary.name not in script.read_text():raise ValueError('Browser variant loader does not reference its WASM')
+            bundle_names|={binary.name,script.name}
         dest=folder/'browser';dest.mkdir()
-        for name in sorted(WEB_NAMES|{wasm.name}):
+        for name in sorted(WEB_NAMES|bundle_names):
             if (source/name).is_file():shutil.copyfile(source/name,dest/name)
         receipt['build']=build;receipt['runnable']=True
     for path in sorted(p for p in folder.rglob('*') if p.is_file()):

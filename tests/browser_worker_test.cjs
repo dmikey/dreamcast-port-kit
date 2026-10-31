@@ -5,8 +5,9 @@ class Worker{constructor(url){this.url=url;this.sent=[];messages.push(this);}pos
 const page=vm.createContext({Worker});vm.runInContext(read('runtime-bridge.js')+'\nvar Runtime=PortWorkerRuntime;',page);
 const runtime=new page.Runtime(canvas,{ready:()=>events.push('ready'),log:s=>events.push(s),audio:s=>events.push(s),error:s=>events.push(s)});
 runtime.start();assert.equal(transferred,1);assert.equal(messages[0].url,'runtime-worker.js');assert.equal(messages[0].sent[0].transfers[0],offscreen);
+let selectedBuild;runtime.callbacks.build=info=>selectedBuild=info;
 runtime.button(8,true);runtime.axes(64,128,-90,0);assert.equal(messages[0].sent.length,1,'input must wait for runtime');
-messages[0].onmessage({data:{kind:'ready'}});assert.deepEqual(Array.from(messages[0].sent[1].message.values),[8,64,128,-90,0]);
+messages[0].onmessage({data:{kind:'ready',build:{suspension:'jspi',wasmSHA256:'selected'}}});assert.equal(selectedBuild.wasmSHA256,'selected');assert.deepEqual(Array.from(messages[0].sent[1].message.values),[8,64,128,-90,0]);
 runtime.axes(64,128,-90,0);assert.equal(messages[0].sent.length,2,'unchanged input must not flood worker');
 messages[0].onmessage({data:{kind:'input-applied',bits:8,sequence:messages[0].sent[1].message.sequence}});
 runtime.button(8,false);runtime.axes(0,0,0,0);assert.deepEqual(Array.from(messages[0].sent[2].message.values),[0,0,0,0,0]);
@@ -16,14 +17,15 @@ messages[0].onmessage({data:{kind:'logs',lines:['one','two']}});assert.deepEqual
 messages[0].onmessage({data:{kind:'error',message:'failed'}});assert.equal(events.at(-1),'failed');runtime.start();assert.equal(transferred,1);
 // Worker-side handshake, buffered input, batched logs and transferable audio.
 const posted=[],imports=[],self={addEventListener(){}},input=[];class OffscreenCanvas{}
-const timers=new Map();let timerId=0;
-const worker=vm.createContext({performance:{now:()=>123},setTimeout:fn=>{timers.set(++timerId,fn);return timerId;},clearTimeout:id=>timers.delete(id),self,OffscreenCanvas,GL:{offscreenCanvases:{}},postMessage:(message,transfers)=>posted.push({message,transfers}),importScripts:(...names)=>imports.push(names),portBrowserScheduler:{yield:()=>Promise.resolve()}});
+const timers=new Map();let timerId=0,idleCalls=0;
+const worker=vm.createContext({performance:{now:()=>123},setTimeout:fn=>{timers.set(++timerId,fn);return timerId;},clearTimeout:id=>timers.delete(id),self,OffscreenCanvas,GL:{offscreenCanvases:{}},postMessage:(message,transfers)=>posted.push({message,transfers}),importScripts:(...names)=>imports.push(names),portBrowserScheduler:{yield:()=>Promise.resolve(),idle:()=>{idleCalls++;return Promise.resolve();}}});
 vm.runInContext(read('runtime-worker.js'),worker);
 self.onmessage({data:{kind:'input',values:[8,300,-1,999,-999]}});
-self.onmessage({data:{kind:'start',canvas:new OffscreenCanvas()}});assert.equal(imports.length,1);assert.deepEqual(imports[0],['vmu-format.js','vmu-storage.js','vmu-transport.js','browser-scheduler.js','game.js']);
+self.onmessage({data:{kind:'start',canvas:new OffscreenCanvas()}});assert.equal(imports.length,1);assert.deepEqual(imports[0],['vmu-format.js','vmu-storage.js','vmu-transport.js','browser-scheduler.js','runtime-loader.js']);
 worker.Module._port_input=(...values)=>input.push(values);worker.Module.onRuntimeInitialized();assert.deepEqual(input[0],[8,255,0,127,-128]);
 worker.Module.preRun[0]();assert.equal(worker.GL.offscreenCanvases.canvas,worker.Module.canvas);
 const samples=new Float32Array([.25,-.25]);worker.Module.portAudioPush(samples);assert.equal(posted.at(-1).message.samples,samples);assert.equal(posted.at(-1).transfers[0],samples.buffer);
+worker.Module.portBrowserYield(1);assert.equal(idleCalls,1,'stable RAM polling uses bounded idle cooperation');
 worker.Module.print('line');worker.Module.portBrowserYield();assert.equal(posted.at(-1).message.lines[0],'line');
 self.onmessage({data:{kind:'pulse',values:[8,0,0,0,0],duration:800}});assert.deepEqual(input.at(-1),[8,0,0,0,0]);
 assert.equal(timers.size,1);const release=timers.values().next().value;timers.clear();release();assert.deepEqual(input.at(-1),[0,0,0,0,0]);
