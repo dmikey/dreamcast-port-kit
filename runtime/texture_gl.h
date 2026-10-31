@@ -9,7 +9,7 @@ static unsigned char port_texels[1024*1024*4];
 #include <string.h>
 static struct {
     GLuint id;uint32_t tcw,tsp,frame,palette[256];
-    uint64_t used;unsigned image_bytes;int valid;
+    uint64_t used;unsigned image_bytes,storage_w,storage_h;int valid;
     unsigned char *source;unsigned length,palette_format;
 } port_cache[512];
 #define PORT_TEXTURE_GPU_BUDGET (64u*1024*1024)
@@ -88,12 +88,17 @@ static GLuint port_texture(uint32_t tcw,uint32_t tsp) {
         else if(pf==3 && paletted){out[0]=(p>>16)&255;out[1]=(p>>8)&255;out[2]=p&255;out[3]=p>>24;}
         else {out[0]=255;out[1]=0;out[2]=255;out[3]=255;}
     }
-    if(!port_cache[cached].id)glGenTextures(1,&port_cache[cached].id);
+    if(port_cache[cached].id && (port_cache[cached].storage_w!=w || port_cache[cached].storage_h!=h)){
+        glDeleteTextures(1,&port_cache[cached].id);port_cache[cached].id=0;
+    }
+    int allocate=!port_cache[cached].id;
+    if(allocate)glGenTextures(1,&port_cache[cached].id);
     GLuint tex=port_cache[cached].id;glBindTexture(GL_TEXTURE_2D,tex);
+    if(allocate){glTexStorage2D(GL_TEXTURE_2D,1,GL_RGBA8,w,h);port_cache[cached].storage_w=w;port_cache[cached].storage_h=h;}
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,(tsp&(1<<16))?GL_CLAMP_TO_EDGE:(tsp&(1<<18))?GL_MIRRORED_REPEAT:GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,(tsp&(1<<15))?GL_CLAMP_TO_EDGE:(tsp&(1<<17))?GL_MIRRORED_REPEAT:GL_REPEAT);
-    glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,w,h,0,GL_RGBA,GL_UNSIGNED_BYTE,port_texels);
+    glTexSubImage2D(GL_TEXTURE_2D,0,0,0,w,h,GL_RGBA,GL_UNSIGNED_BYTE,port_texels);
     port_cache[cached].source=malloc(length);
     if(!port_cache[cached].source)abort();
     memcpy(port_cache[cached].source,vram+base,first);

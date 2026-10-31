@@ -25,7 +25,8 @@ void glDeleteTextures(int n,GLuint *t){}
 void glGenTextures(int n,GLuint *t){*t=1;}
 void glBindTexture(int a,GLuint b){}
 void glTexParameteri(int a,int b,int c){}
-void glTexImage2D(int a,int b,int c,int d,int e,int f,int g,int h,void *p){}
+void glTexStorage2D(int a,int b,int c,int w,int h){}
+void glTexSubImage2D(int a,int b,int c,int d,int w,int h,int f,int g,void *p){}
 void glActiveTexture(int t){}
 static int cull_enabled,cull_face;void glEnable(int c){assert(c==GL_CULL_FACE);cull_enabled=1;}void glDisable(int c){assert(c==GL_CULL_FACE);cull_enabled=0;}void glCullFace(int c){cull_face=c;}
 static int queries,uniform_calls,depth_calls,mask_calls,blend_calls,draws,values[5],mask;

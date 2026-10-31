@@ -414,6 +414,7 @@ def main():
     p.add_argument('--project',required=True);p.add_argument('--toolchain',required=True);p.add_argument('--emsdk',required=True);p.add_argument('--abi',action='store_true');p.add_argument('--optimize',action='store_true',help='Experimental O3/ThinLTO build; compare matched gameplay before preferring it')
     p.add_argument('--assertions',action='store_true',help='Enable browser assertions and stack checks without full ABI instrumentation')
     p.add_argument('--jspi',action='store_true',help='Experimental: also build native WebAssembly stack switching, selected where supported; retain Asyncify fallback')
+    p.add_argument('--simd',action='store_true',help='Enable WebAssembly SIMD auto-vectorization for modern browsers, preserving strict floating-point behavior')
     p = commands.add_parser('run',help='Run a bounded native bring-up test and write structured evidence')
     p.add_argument('--project',required=True);p.add_argument('--seconds',type=float,default=10)
     p.add_argument('--capture-frame',type=int,help='Capture this submitted graphics frame to .local/native/frame.ppm')

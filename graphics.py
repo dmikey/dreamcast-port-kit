@@ -62,6 +62,15 @@ def adapt(core,output,include,renderer):
     renderer=renderer.replace('        const PVR2TriList *list = pvr2_ta_get_list(draw_order[i]);','        if(!(port_render_passes&(1u<<i)))continue;\n        const PVR2TriList *list = pvr2_ta_get_list(draw_order[i]);')
     renderer=renderer.replace('        /* Upload vertex data */', '        if(draw_order[i]==PVR2_LIST_TRANS && !(dc_hw_read32(sh4_get_hardware(),0x005f8098)&1))port_sort_transparent(list);\n        /* Upload vertex data */')
     renderer=renderer.replace('#include "transparency.h"', '#include "platform/platform.h"\n#include "transparency.h"')
-    renderer=renderer.replace('    port_begin_textures();', '    uint64_t port_render_started=platform_get_ticks_us();\n    port_begin_textures();\n    port_capture_snapshot();')
-    renderer=renderer.replace('    glUseProgram(0);\n}', '    glUseProgram(0);\n    static uint64_t total_us,max_us,reported,uploads,draws;static unsigned frames;\n    uint64_t now=platform_get_ticks_us(),elapsed=now-port_render_started;\n    total_us+=elapsed;if(elapsed>max_us)max_us=elapsed;frames++;\n    if(now-reported>=5000000){printf("[RENDER] frames=%u submit_avg_us=%llu submit_max_us=%llu window_us=%llu tex_uploads=%llu tex_gpu_bytes=%u draw_calls=%llu\\n",frames,(unsigned long long)(total_us/frames),(unsigned long long)max_us,(unsigned long long)(now-reported),(unsigned long long)(port_texture_uploads-uploads),port_texture_gpu_bytes,(unsigned long long)(port_draw_calls-draws));draws=port_draw_calls;uploads=port_texture_uploads;reported=now;total_us=max_us=0;frames=0;}\n}')
+    renderer=renderer.replace('#include <emscripten.h>','#include <emscripten.h>\n#include "gpu_timing.h"')
+    renderer=renderer.replace('    port_begin_textures();', '    port_gpu_begin();\n    uint64_t port_render_started=platform_get_ticks_us();\n    port_begin_textures();\n    port_capture_snapshot();')
+    renderer=renderer.replace('    glUseProgram(0);\n}', '    glUseProgram(0);\n    port_gpu_end();\n    static uint64_t total_us,max_us,reported,uploads,draws;static unsigned frames;\n    uint64_t now=platform_get_ticks_us(),elapsed=now-port_render_started;\n    total_us+=elapsed;if(elapsed>max_us)max_us=elapsed;frames++;\n    if(now-reported>=5000000){printf("[RENDER] frames=%u submit_avg_us=%llu submit_max_us=%llu window_us=%llu tex_uploads=%llu tex_gpu_bytes=%u draw_calls=%llu\\n",frames,(unsigned long long)(total_us/frames),(unsigned long long)max_us,(unsigned long long)(now-reported),(unsigned long long)(port_texture_uploads-uploads),port_texture_gpu_bytes,(unsigned long long)(port_draw_calls-draws));draws=port_draw_calls;uploads=port_texture_uploads;reported=now;total_us=max_us=0;frames=0;}\n}')
+    renderer=renderer.replace('#include <GLES3/gl3.h>','#include <GLES3/gl3.h>\n#include "vertex_stream.h"')
+    renderer=renderer.replace('void pvr2_render_destroy(void) {\n','void pvr2_render_destroy(void) {\n    port_stream_destroy();\n')
+    upload='''        glBufferData(GL_ARRAY_BUFFER,
+                     (GLsizeiptr)(list->count * sizeof(PVR2RenderVertex)),
+                     list->vertices, GL_STREAM_DRAW);'''
+    if renderer and renderer.count(upload)!=1:raise ValueError('Expected one vertex upload')
+    renderer=renderer.replace(upload,'        port_stream_vertices(list->vertices,list->count);')
+    renderer=renderer.replace('            port_draw_materials(list,draw_order[i]);','            port_draw_materials(list,draw_order[i]);\n            port_stream_submitted();')
     return renderer

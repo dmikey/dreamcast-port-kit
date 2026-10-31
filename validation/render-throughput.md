@@ -148,3 +148,51 @@ The live preview was restored to the previously verified playable artifact
 `20261031-000454-199f5523` (WASM `097b4f916c011875`) after the experiments.
 The experimental dual-bundle artifact remains available locally for reproduction.
 Restoration is a compatibility precaution, not evidence of a locked 60.
+
+## SIMD and GPU resource streaming
+
+`build-browser --optimize --simd` enables standard 128-bit WebAssembly SIMD and
+LLVM auto-vectorization. It retains strict floating-point semantics; no fast-math
+or relaxed-SIMD flags are used. Scalar builds remain available without `--simd`.
+The test suite compiles the actual triangle sorter to scalar and SIMD WASM,
+confirms vector instructions in the latter, and executes 200 identical cases
+(600 triangles each), including NaNs and signed zero, with matching results.
+
+The renderer requests the high-performance WebGL power preference, reuses
+immutable RGBA8 texture storage with subimage updates, and streams vertices
+through three independent VAO/VBO stores. Reusing a store polls its GPU fence
+with a zero timeout. A busy store gets new backing storage instead of waiting;
+ready stores use their existing capacity. Draw order, shading, texture decoding,
+resolution and the guest clock are unchanged. Resource-contract tests cover
+storage reuse/resizing, upload bounds, in-flight buffers and cleanup.
+
+Sparse `EXT_disjoint_timer_query_webgl2` sampling records GPU time independently
+of CPU submission. Results are read only after availability; disjoint samples
+are discarded, queries are bounded to four outstanding, and absent-extension
+or lost-context paths do not require timers. This measures selected PVR render
+passes, not screen refresh or display latency.
+
+References: [Emscripten SIMD](https://emscripten.org/docs/porting/simd.html) and
+[WebGL best practices](https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API/WebGL_best_practices).
+
+Browser artifact `20261031-022229-b0e0c667`, WASM SHA-256
+`a0a185ef242b777c2aa6f7c5dac244ba1fba8ab5d8521f2d3cdfee6192a39353`,
+booted and rendered the title/attract sequence and textured city scenes in the
+Chromium in-app browser. Binaryen metrics confirm SIMD operations in the full
+commercial-title build, not just the fixture. One city window reported 0.440 ms
+average CPU submission and 0.260 ms average GPU time (10 sparse GPU samples,
+0.558 ms maximum). These are separate timing measures and not a matched
+before/after speedup. The power preference is a request, not proof of a GPU
+switch or a particular hardware backend.
+
+A 30.008-second run spanning attract/title/loading transitions presented 1,603
+frames (53.42/s). It is not a sustained-driving benchmark and does not establish
+a locked 60 FPS. Audio recorded zero underruns and overflows after about 373
+seconds of received source samples. Automated Start reached controller state,
+but advancing reliably into menus/driving remained unverified in this run.
+The earlier compatible artifact remains available for comparison. Actual Safari
+execution and low-end hardware performance have not been revalidated here.
+
+Validation: 66 Python tests (including scalar/SIMD WebAssembly execution) and
+11 JavaScript suites passed. The accelerated renderer has not been promoted to
+a locked-60 claim.

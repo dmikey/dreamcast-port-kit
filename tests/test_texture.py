@@ -21,18 +21,21 @@ typedef unsigned GLuint;
 #define GL_MIRRORED_REPEAT 0
 #define GL_REPEAT 0
 #define GL_RGBA 0
+#define GL_RGBA8 0
 #define GL_UNSIGNED_BYTE 0
 static unsigned char ram[8*1024*1024];
 static uint32_t palette[1024];
 unsigned char *sh4_get_vram_ptr(void) {return ram;}
 void *sh4_get_hardware(void) {return 0;}
 uint32_t dc_hw_read32(void *h,unsigned addr) {return addr==0x5f8108?3:palette[(addr-0x5f9000)/4];}
-void glDeleteTextures(int n,GLuint *t) {}
-void glGenTextures(int n,GLuint *t) {*t=1;}
-void glBindTexture(int a,GLuint b) {}
+static unsigned next_texture,bound_texture;static unsigned widths[4096],heights[4096];
+void glDeleteTextures(int n,GLuint *t) {widths[*t]=heights[*t]=0;}
+void glGenTextures(int n,GLuint *t) {*t=++next_texture;assert(*t<4096);}
+void glBindTexture(int a,GLuint b) {bound_texture=b;}
 void glTexParameteri(int a,int b,int c) {}
-static int uploads;
-void glTexImage2D(int a,int b,int c,int d,int e,int f,int g,int h,void *p) {uploads++;}
+static int uploads,allocations;
+void glTexStorage2D(int a,int b,int c,int w,int h){assert(!widths[bound_texture] && b==1);widths[bound_texture]=w;heights[bound_texture]=h;allocations++;}
+void glTexSubImage2D(int a,int b,int c,int d,int w,int h,int f,int g,void *p){assert(widths[bound_texture]==w && heights[bound_texture]==h);uploads++;}
 '''+decoder+'''
 int main(void) {
     for(int i=0;i<64;i++){ram[i*2]=0;ram[i*2+1]=0xf8;}
@@ -46,7 +49,7 @@ int main(void) {
     port_texture(6u<<27,0);
     assert(port_texels[0]==0x12 && port_texels[1]==0xab && port_texels[2]==0x34 && port_texels[3]==255);
     port_begin_textures();port_texture(6u<<27,0);assert(uploads==2);
-    palette[0]=0xffaabbcc;port_begin_textures();port_texture(6u<<27,0);assert(uploads==3 && port_texels[0]==0xaa);
+    palette[0]=0xffaabbcc;port_begin_textures();port_texture(6u<<27,0);assert(uploads==3 && allocations==2 && port_texels[0]==0xaa);
     ram[0]=1;palette[1]=0xff123456;port_begin_textures();port_texture(6u<<27,0);assert(uploads==4 && port_texels[0]==0x12);
     memset(ram,0,sizeof ram);ram[48]=0;ram[49]=0xf8;port_begin_textures();port_texture((1u<<31)|(1u<<27),0);assert(port_texels[0]==255 && port_texels[1]==0);
     memset(ram,0,sizeof ram);ram[24]=1;palette[0]=0;palette[1]=0xff123456;port_begin_textures();port_texture((1u<<31)|(6u<<27),0);assert(port_texels[0]==0x12 && port_texels[3]==255);

@@ -12,11 +12,12 @@ int platform_init(int width,int height,const char *title) {
     emscripten_webgl_init_context_attributes(&a);
     a.majorVersion=2;a.minorVersion=0;a.alpha=0;a.depth=1;a.stencil=1;
     a.antialias=0;a.preserveDrawingBuffer=0;
+    a.powerPreference=EM_WEBGL_POWER_PREFERENCE_HIGH_PERFORMANCE;
     a.explicitSwapControl=0;a.proxyContextToMainThread=EMSCRIPTEN_WEBGL_CONTEXT_PROXY_DISALLOW;
     emscripten_set_canvas_element_size("#canvas",width,height);
     context=emscripten_webgl_create_context("#canvas",&a);
     if(context<=0||emscripten_webgl_make_context_current(context)!=EMSCRIPTEN_RESULT_SUCCESS){fprintf(stderr,"[PLATFORM] Worker WebGL 2 context failed\n");return -1;}
-    printf("[PLATFORM] Dedicated worker WebGL 2 initialized: %dx%d\n",width,height);return 0;
+    printf("[PLATFORM] Dedicated worker WebGL 2 initialized: %dx%d (high-performance GPU requested)\n",width,height);return 0;
 }
 void platform_shutdown(void){if(context)emscripten_webgl_destroy_context(context);}
 bool platform_poll_events(DCHardware *hw){(void)hw;return true;}

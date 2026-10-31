@@ -114,10 +114,12 @@ def build(args,kit,error,verify,write_json):
     sources += [p for p in (core/'src/hal').glob('*.c') if p.name not in ('pvr2_render.c','pvr2_ta.c','dc_bios.c','dc_hardware.c')]+[output/'renderer.c',output/'platform.c',output/'bios.c',output/'ta.c',output/'hardware.c']
     optimized=bool(getattr(args,'optimize',False)) and not args.abi
     optimization=['-O3','-flto=thin'] if optimized else ['-O2']
+    simd=bool(getattr(args,'simd',False))
+    if simd:optimization+=['-msimd128']
     link_optimization=optimization+([] if not optimized else ['-Wl,--thinlto-jobs=3','-Wl,--thinlto-cache-dir='+str(output/'thinlto-cache')])
     flags=[*optimization,'-fno-strict-aliasing','-fwrapv','-std=c11','-include','time.h','-DHAS_OPENGL','-Wno-unused-value','-Wno-parentheses-equality','-sOFFSCREENCANVAS_SUPPORT=1','-I',str(include),'-I',str(local/'include'),'-I',str(generated/'include'),'-I',str(core/'include'),'-I',str(kit/'runtime')]
     if args.abi:flags+=['-DDCRECOMP_ABI_CHECK']
-    objects=output/'obj';objects.mkdir(exist_ok=True)
+    objects=output/('obj-simd' if simd else 'obj');objects.mkdir(exist_ok=True)
     headers=b''.join(p.read_bytes() for parent in [include,local/'include',generated/'include',core/'include',kit/'runtime'] for p in sorted(parent.rglob('*.h')))
     def compile_one(src):
         obj=objects/(hashlib.sha256(str(src).encode()).hexdigest()[:10]+'_'+src.stem+'.o');stamp=obj.with_suffix('.sha')
@@ -140,6 +142,6 @@ def build(args,kit,error,verify,write_json):
         if result.returncode:raise error('WebAssembly '+suspension+' link: '+result.stderr[-2500:])
         bundle=publish_bundle(output,stem)
         if suspension=='jspi':variants['jspi']=bundle
-    write_json(output/'build.json',{'target':'browser-webgl2','suspension':'asyncify','variants':variants,'features':{'vmu':2,'ramReadFastPath':1,'idleCooperation':1,'discCacheSlots':16},'execution':'dedicated-worker-offscreen','optimization':'O2-debug' if args.abi else 'O3-thinlto' if optimized else 'O2','playable':False,'abiChecks':bool(args.abi),'assertions':assertions,'scheduler':'message-channel-8ms','sourceSetSHA256':json.loads((project/'port.json').read_text())['sourceSetSHA256'],'wasmSHA256':hashlib.sha256((output/'game.wasm').read_bytes()).hexdigest()})
+    write_json(output/'build.json',{'target':'browser-webgl2','suspension':'asyncify','variants':variants,'features':{'vmu':2,'ramReadFastPath':1,'idleCooperation':1,'discCacheSlots':16,'wasmSIMD':int(simd),'immutableTextures':1,'vertexStreamSlots':3,'highPerformanceGPURequested':1},'execution':'dedicated-worker-offscreen','optimization':'O2-debug' if args.abi else 'O3-thinlto' if optimized else 'O2','playable':False,'abiChecks':bool(args.abi),'assertions':assertions,'scheduler':'message-channel-8ms','sourceSetSHA256':json.loads((project/'port.json').read_text())['sourceSetSHA256'],'wasmSHA256':hashlib.sha256((output/'game.wasm').read_bytes()).hexdigest()})
     publish_web_assets(kit,project,output)
     print('Browser build ready. Run serve-browser; gameplay remains unverified.')
